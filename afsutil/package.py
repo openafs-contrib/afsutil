@@ -764,6 +764,7 @@ class MockRpmBuilder(RpmBuilder):
             '--resultdir', resultdir,
             '--define', 'build_userspace 1',
             '--define', 'build_modules 0',
+            *args,
             output=False)
         if self.dstdir:
             mkdirp(self.dstdir)
