@@ -110,8 +110,9 @@ def _setenv_solaris():
         ccpath = _detect_solariscc()
         if ccpath:
             need.append(ccpath)
-            logger.info("Adding '%s' to SOLARISCC." % (ccpath))
-            os.environ['SOLARISCC'] = os.path.join(ccpath, 'cc')
+            solariscc = os.path.join(ccpath, 'cc')
+            logger.info("Setting SOLARISCC to '%s'", solariscc)
+            os.environ['SOLARISCC'] = solariscc
         else:
             logger.warning("Failed to find path to solaris cc!")
     # Update the PATH.
