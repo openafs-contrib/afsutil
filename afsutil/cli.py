@@ -135,6 +135,7 @@ def _setup_logging(verbose=False, quiet=False, log=None, **kwargs):
     if log:
         options['filename'] = log
         options['format'] = '%(asctime)s %(levelname)s %(message)s'
+        options['filemode'] = 'w' # clobber old logs
     logging.basicConfig(**options)
     return logging.getLogger('afsutil')
 
