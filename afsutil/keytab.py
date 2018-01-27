@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2015 Sine Nomine Associates
+# Copyright (c) 2014-2017 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -28,9 +28,9 @@ import time
 import logging
 import shutil
 
-from afsutil.system import CommandFailed
+from afsutil.system import CommandFailed, mkdirp
 from afsutil.transarc import AFS_CONF_DIR
-from afsutil.cli import asetkey, aklog
+from afsutil.cmd import asetkey, aklog
 
 logger = logging.getLogger(__name__)
 
@@ -97,19 +97,25 @@ def _check_for_extended_keyfile_support():
     try:
         usage = asetkey(quiet=True)
     except CommandFailed as e:
-        if e.code == 1 and "usage" in e.err:
-            usage = e.err
-        else:
-            raise e
+        usage = e.out
+    logger.debug("asetkey usage: %s", usage)
     if usage is None or not "usage" in usage:
         raise AssertionError("Failed to get asetkey usage.")
-    logger.debug("asetkey usage: %s", usage)
     new_asetkey = "add <type> <kvno> <subtype> <keyfile> <princ>" in usage
     if new_asetkey:
         logger.info("asetkey supports extended key format.")
     else:
         logger.info("asetkey does not support extended key format.")
     return new_asetkey
+
+class KeytabException(Exception):
+    pass
+
+class InvalidKeytab(KeytabException):
+    pass
+
+class NotFoundKeytab(KeytabException):
+    pass
 
 class Keytab(object):
     """Utility to support testing with keytabs and akimpersonate.
@@ -283,14 +289,24 @@ class Keytab(object):
         the external klist utility on systems where akimpersonate is
         used instead of kinit.
         """
+        logger.debug("reading keytab %s", path)
         self.filename = path
-        stat = os.stat(path)
+        try:
+            stat = os.stat(path)
+        except OSError as e:
+            if e.errno == os.errno.ENOENT:
+                raise NotFoundKeytab("File {0} not found.".format(path))
+            else:
+                raise e
         file_size = stat.st_size
         with open(path, 'r') as f:
             offset = struct.calcsize("!h")
-            version, = self._read(f, "!h")
+            try:
+                version, = self._read(f, "!h")
+            except IOError:
+                raise InvalidKeytab("File {0} is not keytab.".format(path))
             if version != 0x0502 and version != 0x051:  # magic
-                raise IOError("Not a keytab file: '%s'" % path)
+                raise InvalidKeytab("File {0} is not keytab.".format(path))
             while offset < file_size:
                 f.seek(offset)
                 size, = self._read(f, "!l") # record size, not including this field
@@ -303,6 +319,7 @@ class Keytab(object):
 
     def add_fake_key(self, principal, enctype='aes256-cts-hmac-sha1-96', secret=None):
         """Create a synthetic key for testing with akimpersonate."""
+        logger.debug("Adding fake key for principal '%s', enctype='%s'.", principal, enctype)
         timestamp = int(time.time())
         kvno = 1
         comps,realm = _split_principal(principal)
@@ -332,7 +349,9 @@ class Keytab(object):
         return self
 
     def write(self, path):
-        with open(path, "w") as f:
+        logger.debug("Writing keytab %s", path)
+        mkdirp(os.path.dirname(path))
+        with open(path, 'w') as f:
             self._write(f, '!h', self._KRB_KEYTAB_MAGIC)
             for k in self.entries:
                 self._write_entry(f, k)
@@ -462,7 +481,7 @@ class Keytab(object):
                 raise AssertionError("Internal error")
         return principal
 
-    def set_service_key(self, cell=None, realm=None, kformat=None, confdir=AFS_CONF_DIR, **kwargs):
+    def set_service_key(self, cell, realm, kformat, confdir, dryrun=False, **kwargs):
         """Set the service key given in a keytab file."""
         if self.filename is None:
             raise AssertionError("Must read or write keytab file first.""")
@@ -474,18 +493,27 @@ class Keytab(object):
             raise ValueError("Principal '%s' not found in keytab %s" % (principal, self.filename))
         enctypes = [e['enctype'] for e in self.get_entries(principal)]
 
-        if kformat == None:
+        if not kformat:
+            kformat = 'detect'
+        if kformat == 'detect':
             kformat = self._guess_key_format(principal)
 
-        logger.info("Setting key with keytab '%s', principal '%s', kvno '%s', enctypes '%s', format '%s'",
-                    self.filename, principal, kvno, ", ".join(enctypes), kformat)
+        if not dryrun:
+            msg = "Setting key"
+        else:
+            msg = "Skipping set key for dryrun"
+        logger.info("%s; keytab '%s', principal '%s', kvno '%s', enctypes '%s', format '%s'",
+                    msg, self.filename, principal, kvno, ", ".join(enctypes), kformat)
 
         if kformat == 'transarc':
-            self._set_service_key_transarc(principal)
+            if not dryrun:
+                self._set_service_key_transarc(principal)
         elif kformat == 'rxkad-k5':
-            self._set_service_key_rxkad_k5(confdir, principal)
+            if not dryrun:
+                self._set_service_key_rxkad_k5(confdir, principal)
         elif kformat == 'extended':
-            self._set_service_key_extended(principal)
+            if not dryrun:
+                self._set_service_key_extended(principal)
         else:
             raise ValueError("Unknown key file format name: %s" % (kformat))
 
@@ -505,3 +533,51 @@ class Keytab(object):
         for line in output.splitlines():
             logger.info(line)
 
+def create(cell='robotest', realm=None, keytab='/tmp/afs.keytab',
+           enctype=None, secret=None, **kwargs):
+    """Create a fake keytab file.
+
+    cell: afs cell name
+    realm: kerberos realm name
+    keytab: destination file path
+    enctype: encyption type
+    secret: key data
+    """
+    if realm is None:
+        realm = cell.upper()
+    principal = "afs/{0}@{1}".format(cell, realm)
+    k = Keytab()
+    k.add_fake_key(principal, enctype=enctype, secret=secret)
+    k.write(keytab)
+
+def destroy(keytab='/tmp/afs.keytab', force=False, **kwargs):
+    """Remove a keytab file.
+
+    keytab: path of the keytab file to be removed
+    force:  delete even if the file is not a valid keytab
+    """
+    try:
+        k = Keytab().load(keytab)
+        logger.debug("removing keytab file %s", k.filename)
+        os.remove(k.filename)
+    except NotFoundKeytab:
+        logger.debug("keytab not found %s", keytab)
+    except InvalidKeytab:
+        if not force:
+            logger.info("skipping removal of non-keytab file %s", keytab)
+        else:
+            logger.debug("removing invalid keytab file %s (forced)", keytab)
+            os.remove(keytab)
+
+def setkey(keytab='/tmp/afs.keytab', cell=None, realm=None,
+        kformat=None, confdir=AFS_CONF_DIR, **kwargs):
+    """Set a service key from a keytab file.
+
+    keytab: path of the keytab file
+    cell: cellname
+    realm: kerberos realm name
+    kformat: keyfile format
+    confdir: server config file path
+    """
+    k = Keytab.load(keytab)
+    k.set_service_key(cell, realm, kformat, confdir, **kwargs)

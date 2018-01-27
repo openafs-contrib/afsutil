@@ -22,9 +22,7 @@
 
 import logging
 import os
-import re
 import shutil
-import sys
 import glob
 import pkg_resources
 import tempfile
@@ -183,10 +181,10 @@ class SolarisClientSetup(TransarcClientSetup):
         elif osrel == '5.11':
             return self._afs_driver_511()
         else:
-            raise AssertionError("Unsupported operating system: %s" % (uname))
+            raise AssertionError("Unsupported operating system: %s" % (osrel))
 
     def _afs_driver_510(self):
-        output = sh('/bin/isalist', output=True)[0]
+        output = sh('/bin/isalist')[0]
         if 'amd64' in output:
             driver = '/kernel/fs/amd64/afs'
         elif 'sparcv9' in output:
@@ -196,7 +194,7 @@ class SolarisClientSetup(TransarcClientSetup):
         return driver
 
     def _afs_driver_511(self):
-        output = sh('/bin/isalist', output=True)[0]
+        output = sh('/bin/isalist')[0]
         if 'amd64' in output:
             driver = '/kernel/drv/amd64/afs'
         elif 'sparcv9' in output:
@@ -244,30 +242,22 @@ class TransarcInstaller(Installer):
             raise AssertionError("Unsupported operating system: %s" % (uname))
         self.installed = {'libs':False, 'client':False, 'server':False, 'ws':False}
 
-    def _detect_sysname(self):
-        """Try to detect the sysname from the previous build output."""
-        sysname = None
-        try:
-            with open("src/config/Makefile.config", "r") as f:
-                for line in f.readlines():
-                    match = re.match(r'SYS_NAME\s*=\s*(\S+)', line)
-                    if match:
-                        sysname = match.group(1)
-                        break
-        except IOError:
-            pass
-        return sysname
-
     def _detect_dest(self):
-        """Try to detect the dest directory from the previous build.
-        This is used to install bins after building binaries."""
-        dest = None
-        sysname = self._detect_sysname()
-        if sysname:
-            dest = "%s/dest" % (sysname)
-        else:
-            raise ValueError("Unable to find dest directory.")
-        return dest
+        user = os.getenv('SUDO_USER') # The user who invoked sudo.
+        patterns = ["./*/dest"]
+        if user:
+            patterns.append("/home/{user}/openafs/*/dest".format(**locals()))
+            patterns.append("/home/{user}/src/openafs/*/dest".format(**locals()))
+        for pattern in patterns:
+            logger.debug("Searching for dest in '%s'", pattern)
+            paths = glob.glob(pattern)
+            if len(paths) > 1:
+                raise AssertionError("Unable to find dest directory: too many sysnames in '%s'!" % (pattern))
+            if len(paths) == 1:
+                path = os.path.abspath(paths[0])
+                logger.debug("Found dest: '%s'", path)
+                return path
+        raise AssertionError("Unable to find dest directory.")
 
     def _check_dest(self, dest):
         """Verify the dest directory looks sane."""
@@ -470,17 +460,3 @@ class _Test(object):
         self.test_install_client()
         self.test_remove_server() # leaves common packages
         self.test_remove_client() # removes common packages
-
-def main():
-    if len(sys.argv) != 2:
-        sys.stderr.write("usage: python transarc.py <dest>\n")
-        sys.exit(1)
-    if os.geteuid() != 0:
-        sys.stderr.write("Must run as root!\n")
-        sys.exit(1)
-    t = _Test(sys.argv[1])
-    t.test()
-
-if __name__ == '__main__':
-    main()
-

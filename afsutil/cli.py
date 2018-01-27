@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2016 Sine Nomine Associates
+# Copyright (c) 2017 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -18,103 +18,151 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-"""Wrappers to invoke AFS command line tools."""
+"""Create command line subcommands with argparse
 
-import os
+This module provides a thin wrapper over the standard argparse package to
+declaratively create command line subcommands. A decorator turns regular
+functions into cli subcommands. The argument function defines command line
+options.
 
-from afsutil.system import run, which
-from afsutil.transarc import AFS_SRV_BIN_DIR, AFS_SRV_SBIN_DIR, AFS_WS_DIR
+Example:
 
-# Common hidding places.
-PATHS = [
-  '/usr/bin',
-  '/usr/sbin',
-  AFS_SRV_BIN_DIR,
-  AFS_SRV_SBIN_DIR,
-  os.path.join(AFS_WS_DIR, 'bin'),
-  os.path.join(AFS_WS_DIR, 'etc'),
-]
+    @subcommand(
+        argument("host", metavar="<host>", help="example positional option"),
+        argument("--filename", "-f", help="example optional flag"),
+        argument("--output", default="example", help="example option"),
+        )
+    def example(**args):
+        'example subcommand'
+        print("args:", args['host'], args['filename'], args['output'])
+        return 0
 
-KINIT = None
-ASETKEY = None
-AKLOG = None
-BOS = None
-VOS = None
-PTS = None
-FS = None
-UDEBUG = None
-RXDEBUG = None
-TOKENS = None
+    dispatch()
+    # usage: cli example [options]
+
+"""
 
 
-def asetkey(*args, **kwargs):
-    global ASETKEY
-    if ASETKEY is None:
-        ASETKEY = which('asetkey', extra_paths=PATHS, raise_errors=True)
-    return run(ASETKEY, args=args, **kwargs)
+from __future__ import print_function
+import argparse, logging, os, sys
+from afsutil.system import CommandFailed
+try:
+    from configparser import ConfigParser # python3
+except ImportError:
+    from ConfigParser import ConfigParser # python2
 
-def kinit(*args, **kwargs):
-    global KINIT
-    extra_paths = ['/usr/bin', '/usr/sbin', '/usr/kerberos/bin', '/usr/heimdal/bin']
-    if KINIT is None:
-        KINIT = which('kinit', extra_paths=extra_paths, raise_errors=True)
-    return run(KINIT, args=args, **kwargs)
+progname = 'afsutil'
+root = argparse.ArgumentParser()
+parent = root.add_subparsers(dest='subcommand')
+config = ConfigParser()
+config.read([
+    '/etc/{0}.ini'.format(progname),
+    os.path.expanduser('~/.{0}.ini'.format(progname)),
+])
 
-def aklog(*args, **kwargs):
-    global AKLOG
-    if AKLOG is None:
-        AKLOG = which('aklog', extra_paths=PATHS, raise_errors=True)
-    return run(AKLOG, args=args, **kwargs)
+def _get_config(section, option, default):
+    """Get the config option"""
+    value = default
+    if isinstance(value, list) or isinstance(value, tuple):
+        subsection = "{0}.{1}".format(section, option)
+        if config.has_section(subsection):
+            value = []
+            for k,v in config.items(subsection):
+                value.append("{0}={1}".format(k,v))
+        elif config.has_option(section, option):
+            value = config.get(section, option).split()
+    else:
+        if config.has_option(section, option):
+            value = config.get(section, option)
+    return value
 
-def bos(*args, **kwargs):
-    global BOS
-    if BOS is None:
-        BOS = which('bos', extra_paths=PATHS, raise_errors=True)
-    if os.geteuid() == 0:
-        args = list(args)
-        args.append('-localauth')
-    return run(BOS, args=args, **kwargs)
+def _long_flag(name_or_flags):
+    """Find the long flag name, if one."""
+    for opt in name_or_flags:
+        if opt.startswith('--'):
+            return opt.lstrip('--')
+    return None
 
-def vos(*args, **kwargs):
-    global VOS
-    if VOS is None:
-        VOS = which('vos', extra_paths=PATHS, raise_errors=True)
-    if os.geteuid() == 0:
-        args = list(args)
-        args.append('-localauth')
-    return run(VOS, args=args, **kwargs)
+def argument(*name_or_flags, **options):
+    """Helper to declare subcommand arguments."""
+    return (name_or_flags, options)
 
-def pts(*args, **kwargs):
-    global PTS
-    if PTS is None:
-        PTS = which('pts', extra_paths=PATHS, raise_errors=True)
-    if os.geteuid() == 0:
-        args = list(args)
-        args.append('-localauth')
-    return run(PTS, args=args, **kwargs)
+def subcommand(*arguments, **kwargs):
+    """Decorator to declare command line subcommands."""
+    def decorator(function):
+        name = function.__name__.strip('_')
+        desc = function.__doc__
+        parser = parent.add_parser(name, description=desc)
+        args = list(arguments) # Local var to add common args.
+        if name not in ('help', 'version'):
+            args.insert(0, argument('-q', '--quiet', help='print less messages', action='store_true'))
+            args.insert(1, argument('-v', '--verbose', help='print more messages', action='store_true'))
+            args.insert(2, argument('-l', '--log', help='log file location'))
+        for arg in args:
+            name_or_flags,options = arg
+            default = options.get('default') # may be a list
+            flag = _long_flag(name_or_flags)
+            if flag:
+                default = _get_config(name, flag, default)
+                options['default'] = default
+            if default and 'help' in options:
+                if isinstance(default, list):
+                    default = " ".join(default)
+                options['help'] += " (default: {0})".format(default)
+            parser.add_argument(*name_or_flags, **options)
+        parser.set_defaults(function=function, **kwargs)
+        return function
+    return decorator
 
-def fs(*args, **kwargs):
-    global FS
-    if FS is None:
-        FS = which('fs', extra_paths=PATHS, raise_errors=True)
-    return run(FS, args=args, **kwargs)
+def usage():
+    """Print a summary of the subcommands."""
+    print("usage: {0} <command> [options]".format(progname))
+    print("")
+    print("commands:")
+    for name,parser in parent.choices.items():
+        print("  {name:12} {desc}".format(name=name, desc=parser.description))
+    return 0
 
-def udebug(*args, **kwargs):
-    global UDEBUG
-    if UDEBUG is None:
-        UDEBUG = which('udebug', extra_paths=PATHS, raise_errors=True)
-    return run(UDEBUG, args=args, **kwargs)
+def _setup_logging(verbose=False, quiet=False, log=None, **kwargs):
+    options = {
+        'level':logging.INFO,
+        'format':'%(message)s',
+    }
+    if quiet:
+        options['level'] = logging.ERROR
+    if verbose:
+        options['level'] = logging.DEBUG
+    if log:
+        options['filename'] = log
+        options['format'] = '%(asctime)s %(levelname)s %(message)s'
+    logging.basicConfig(**options)
+    return logging.getLogger('afsutil')
 
-def rxdebug(*args, **kwargs):
-    global RXDEBUG
-    if RXDEBUG is None:
-        RXDEBUG = which('rxdebug', extra_paths=PATHS+[os.path.join(AFS_WS_DIR,'etc')], raise_errors=True)
-    return run(RXDEBUG, args=args, **kwargs)
-
-def tokens(*args, **kwargs):
-    global TOKENS
-    if TOKENS is None:
-        TOKENS = which('tokens', extra_paths=PATHS+[os.path.join(AFS_WS_DIR,'bin')], raise_errors=True)
-    return run(TOKENS, args=args, **kwargs)
-
-
+def dispatch():
+    """Parse arguments and dispatch the subcommand."""
+    args = vars(root.parse_args())
+    requires_root = args.pop('requires_root', False)
+    function = args.pop('function')
+    if requires_root and os.geteuid() != 0:
+        sys.stderr.write("afsutil: Must run as root!\n")
+        sys.exit(1)
+    log = _setup_logging(**args)
+    cwd = None
+    chdir = args.get('chdir')
+    if chdir:
+        log.info("Changing to directory %s", chdir)
+        cwd = os.getcwd()
+        os.chdir(chdir)
+    try:
+        code = function(**args)
+    except CommandFailed as e:
+        if args.get('log') or args.get('verbose'):
+            log.exception(e)
+        sys.stderr.write("Command failed: %s, code %d\n" % (e.cmd, e.code))
+        sys.stderr.write("output:\n")
+        sys.stderr.write("%s\n" % (e.out))
+        code = 1
+    finally:
+        if cwd:
+            os.chdir(cwd)
+    return code

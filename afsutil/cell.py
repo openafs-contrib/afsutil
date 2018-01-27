@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2016 Sine Nomine Associates
+# Copyright (c) 2014-2017 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -18,10 +18,14 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-"""Setup a new AFS cell.
+"""Setup a new OpenAFS cell
 
-This module requires the server binaries must be installed, the Kerberos
-service key is set, and the bosserver running.
+Configure a new OpenAFS cell on one or more hosts and add fileservers to an
+existing OpenAFS cell.  The OpenAFS clients and servers programs must already
+be installed on the hosts. The Kerberos service key must be set and the
+bosserver should be running on each server host. An OpenAFS client is required
+to mount the volumes and set the ACLs of the top level volumes. The client may
+be running on a separate host than the server.
 """
 
 import time
@@ -30,9 +34,12 @@ import os
 import re
 import socket
 
-from afsutil.cli import bos, vos, pts, fs, udebug, rxdebug
+import afsutil.system
+import afsutil.keytab
+from afsutil.cmd import bos, vos, pts, fs, udebug, rxdebug
 from afsutil.system import CommandFailed, afs_mountpoint
 from afsutil.transarc import AFS_SRV_LIBEXEC_DIR
+from afsutil.misc import lists2dict, uniq
 
 logger = logging.getLogger(__name__)
 
@@ -45,34 +52,68 @@ PORT = {
     'bosserver':  '7007',
 }
 
-def _optfsbnode(options):
-    """Helper to get the fs bnode type."""
-    dafs = options.get('dafs', 'yes').strip() # dafs by default.
-    if dafs == 'no' or dafs == 'false' or dafs == '0':
-        bnode = 'fs'
-    else:
-        bnode = 'dafs'
-    return bnode
-
-def _optcmdstring(options, program):
-    """Helper to get the server cmd line string for bos create."""
-    # Use the canonical path, bosserver will convert to the actual path.
-    cmd = os.path.join(AFS_SRV_LIBEXEC_DIR, program)
-    opts = options.get(program, '').strip()
-    return ' '.join(filter(None, [cmd, opts]))
-
 class Host(object):
     """Helper to configure an OpenAFS server using the bos command."""
 
-    def __init__(self, hostname='localhost', **kwargs):
-        """Initialize the afs host object."""
+    def __init__(self, hostname='localhost', options=None, **kwargs):
+        """Initialize the afs host object.
+
+        hostname: hostname
+        options:  dict of server options
+        """
         if hostname is None or hostname == 'localhost':
             hostname = socket.gethostname()
+        hostname = hostname.strip()
         self.hostname = hostname
         # The following are retrieved with bos as needed.
         self.cellname = None
         self.cellhosts = None
         self.users = None
+        # Server program options.
+        if options is None:
+            options = {}
+        self.options = options
+        # Determine if this host is using dafs based on the given server
+        # options. First check the host specific options, then check the host
+        # independent options, finally, default to dafs.
+        self.dafs = None
+        if self.dafs is None:
+            for program in ('dafileserver', 'davolserver', 'salvageserver', 'dasalvager'):
+                flags = options.get(hostname + ":" + program, None)
+                if not flags is None:
+                    self.dafs = True
+                    break
+        if self.dafs is None:
+            for program in ('fileserver', 'volserver' 'salvager'):
+                flags = options.get(hostname + ":" + program, None)
+                if not flags is None:
+                    self.dafs = False
+                    break
+        if self.dafs is None:
+            for program in ('dafileserver', 'davolserver', 'salvageserver', 'dasalvager'):
+                flags = options.get(program, None)
+                if not flags is None:
+                    self.dafs = True
+                    break
+        if self.dafs is None:
+            for program in ('fileserver', 'volserver' 'salvager'):
+                flags = options.get(program, None)
+                if not flags is None:
+                    self.dafs = False
+                    break
+        if self.dafs is None:
+            self.dafs = True
+
+    def cmd(self, program):
+        """Get the bos create -cmd argument."""
+        # Use the canonical path; bosserver will convert it to the actual path.
+        cmd = os.path.join(AFS_SRV_LIBEXEC_DIR, program)
+        flags = self.options.get(self.hostname + "." + program, None)
+        if flags is None:
+            flags = self.options.get(program, None)
+        if flags:
+            cmd += ' ' + flags
+        return cmd
 
     def rxping(self, service='bosserver', retry=10):
         try:
@@ -196,12 +237,13 @@ class Host(object):
             logger.info("Adding %s to the superuser list on %s.", name, self.hostname)
             bos('adduser', '-server', self.hostname, '-user', name)
 
-    def create_database(self, name, options):
+    def create_database(self, name):
         """Start the database server."""
         service = self.getservice(name)
         if service is not None:
             status = service['status']
             if status == 'running':
+                # XXX: Update options if needed!
                 logger.info("Skipping create database for %s; already running.", name)
                 return
             if status == 'shutdown':
@@ -212,10 +254,17 @@ class Host(object):
                                 (status, name, self.hostname))
         bos('create', '-server', self.hostname,
             '-instance', name, '-type', 'simple',
-            '-cmd', _optcmdstring(options, name))
+            '-cmd', self.cmd(name))
 
     def shutdown(self, name):
+        """Shutdown the service name."""
         bos('shutdown', '-server', self.hostname, '-instance', name, '-wait')
+
+    def shutdown_all(self):
+        """Shutdown all running services."""
+        for name,service in self.services().items():
+            if service['status'] == 'running':
+                self.shutdown(name)
 
     def restart(self, name):
         bos('restart', '-server', self.hostname, '-instance', name)
@@ -245,25 +294,35 @@ class Host(object):
              logger.debug("Host %s is sync site with recovery state %s", self.hostname, recovery_state)
         return False
 
-    def create_fileserver(self, bnode, options):
-        if bnode in self.services():
-            logger.info("Skipping create %s on %s; already exists.", bnode, self.hostname)
-            return
-        if bnode == 'dafs':
+    def create_fileserver(self):
+        """Start the fileserver (fs or dafs)."""
+        bnode = 'dafs' if self.dafs else 'fs'
+        service = self.getservice(bnode)
+        if service is not None:
+            status = service['status']
+            if status == 'running':
+                # XXX: Update options if needed!
+                logger.info("Skipping create fileserver; already running.")
+                return
+            if status == 'shutdown':
+                logger.info("Retarting fileserver.")
+                self.restart(bnode)
+                return
+            raise AssertionError("Unexpected status '%s' while trying to create fileserver on host %s." % \
+                                (status, self.hostname))
+        if self.dafs:
             bos('create', '-server', self.hostname,
-                '-instance', bnode, '-type', bnode,
-                '-cmd', _optcmdstring(options, 'dafileserver'),
-                '-cmd', _optcmdstring(options, 'davolserver'),
-                '-cmd', _optcmdstring(options, 'salvageserver'),
-                '-cmd', _optcmdstring(options, 'dasalvager'))
-        elif bnode == 'fs':
-            bos('create', '-server', self.hostname,
-                '-instance', bnode, '-type', bnode,
-                '-cmd', _optcmdstring(options, 'fileserver'),
-                '-cmd', _optcmdstring(options, 'volserver'),
-                '-cmd', _optcmdstring(options, 'salvager'))
+                '-instance', 'dafs', '-type', 'dafs',
+                '-cmd', self.cmd('dafileserver'),
+                '-cmd', self.cmd('davolserver'),
+                '-cmd', self.cmd('salvageserver'),
+                '-cmd', self.cmd('dasalvager'))
         else:
-            raise AssertionError("Invalid fs bnode!")
+            bos('create', '-server', self.hostname,
+                '-instance', 'fs', '-type', 'fs',
+                '-cmd', self.cmd('fileserver'),
+                '-cmd', self.cmd('volserver'),
+                '-cmd', self.cmd('salvager'))
 
         ok = self.rxping(service='fileserver', retry=60)
         if not ok:
@@ -288,77 +347,99 @@ class Host(object):
             logger.info("Creating volume %s on host %s, partition %s.", name, self.hostname, partition)
             vos('create', '-server', self.hostname, '-partition', partition, '-name', name, retry=60, wait=10)
 
-
 class Cell(object):
 
-    def __init__(self, cell='localcell', db=None, fs=None, admins=None, options=None, **kwargs):
+    def __init__(self, cell='localcell', db=None, fs=None,
+                 admins=None, admin='admin',
+                 options=None, paths=None,
+                 keytab='/tmp/afs.keytab', realm=None, akimpersonate=False,
+                 **kwargs):
         """Initialize the cell object.
 
-        The first list element of the db list will be the primary db server,
-        and the first element of the fs list will be the primary fileserver.
+        The first list element of the db list will be the first db server
+        created. The first element of the fs list will be the first fileserver,
+        which will house the rw root volumes.
         """
         # Some sanity checking.
         assert cell is not None and isinstance(cell, basestring)  # expect a string
         assert db is None or not isinstance(db, basestring) # expect a list or tuple
         assert fs is None or not isinstance(fs, basestring) # expect a list or tuple
         assert admins is None or not isinstance(admins, basestring) # expect a list or tuple
-        assert options is None or not isinstance(options, basestring) # expect a list or tuple
-
-        # Covert the option list of lists to a dict.
-        def optlists2dict(options):
-            names = {}
-            for optlist in options:
-                for o in optlist:
-                    name,value = o.split('=', 1)
-                    names[name] = value
-            return names
-        if options is None: options = [[]]
-        self.options = optlists2dict(options)
+        assert options is None or not isinstance(options, basestring) # expect a list or dict
+        assert paths is None or not isinstance(options, basestring) # expect a list or dict
 
         # Defaults.
         hostname = socket.gethostname()
-        if admins is None: admins = ['admin']
-        if db is None: db = [hostname]
-        if fs is None: fs = [hostname]
+        if admins is None:
+            admins = [admin]
+        if db is None or len(db) == 0:
+            db = [hostname]
+        if fs is None or len(fs) == 0:
+            fs = [hostname]
         # In case 'localhost' is given as a hostname, convert to the real name.
         db = [hostname if x=='localhost' else x for x in db]
         fs = [hostname if x=='localhost' else x for x in fs]
 
-        # Cell name.
+        # Cell info.
         self.cell = cell
+        self.keytab = keytab
+        if realm is None:
+            self.realm = cell.upper()
+        else:
+            self.realm = realm
+        self.options = lists2dict(options)
+        self.paths = lists2dict(paths)
 
         # Super users for this cell. Convert k5 style names to k4 style for AFS.
         self.admins = [name.replace('/', '.') for name in admins]
 
         # Create the set of hosts objects for this cell. A given host may
         # be a db server, a file server, or both. Avoid creating duplicate
-        # objects.  The first element in the given lists are the primary
+        # objects.  The first element in the given lists are the first
         # servers for the cell setup.
-        hosts = {}
-        for name in set(db + fs):
-            hosts[name] = Host(name)
-        self.primary_db = hosts[db[0]]
-        self.primary_fs = hosts[fs[0]]
-        self.db = [hosts[name] for name in set(db)]
-        self.fs = [hosts[name] for name in set(fs)]
-        self.hosts = hosts.values()
+        hosts = {} # tmp dict to setup db and fs lists.
+        for name in uniq(db + fs):
+            hosts[name] = Host(name, options=self.options)
+        self.hosts = hosts.values() # list of Host objects for db and/or fs
+        self.db = [hosts[name] for name in uniq(db)]
+        self.fs = [hosts[name] for name in uniq(fs)]
+
+        # Set the programs to be used by login().
+        self.akimpersonate = akimpersonate
+        for cmd in self.paths:
+            afsutil.cmd.setpath(cmd, self.paths[cmd])
 
     @classmethod
     def current(cls, **kwargs):
         """Create a cell object from the existing cell."""
         host = Host()
-        cell = host.getcellname()
-        db = host.getcellhosts()
-        fs = ['localhost'] # get from vos listaddrs?
-        admins = host.listusers()
-        cell = cls(cell=cell, db=db, fs=fs, admins=admins, **kwargs)
-        return cell
+        cell = kwargs.pop('cell', host.getcellname())
+        db = kwargs.pop('db', host.getcellhosts())
+        fs = kwargs.pop('fs', ['localhost']) # get list from vos listaddrs?
+        admins = kwargs.pop('admins', host.listusers())
+        return cls(cell=cell, db=db, fs=fs, admins=admins, **kwargs)
 
-    def _wait_for_quorum(self, name, attempts=60, delay=10):
+    def _akimpersonate(self, user):
+        if not os.path.exists(self.keytab):
+            raise ValueError("Keytab file not found.")
+        k = afsutil.keytab.Keytab.load(self.keytab)
+        k.akimpersonate(user=user, cell=self.cell, realm=self.realm)
+
+    def _kinit_aklog(self, user):
+        if not os.path.exists(self.keytab):
+            raise ValueError("Keytab file not found.")
+        output = afsutil.cmd.kinit('-V', '-k', '-t', self.keytab, user.replace('.','/'))
+        for line in output.splitlines():
+            logger.info(line)
+        output = afsutil.cmd.aklog('-d', '-c', self.cell, '-k', self.realm)
+        for line in output.splitlines():
+            logger.info(line)
+
+    def _wait_for_quorum(self, name, hosts, attempts=60, delay=10):
         for attempt in xrange(0, attempts+1):
             logger.info("Waiting for %s database quorum; attempt %d of %d.", name, (attempt+1), attempts)
             num_sync_sites = 0
-            for host in self.db:
+            for host in hosts:
                 if host.is_recovered_sync_site(name):
                     num_sync_sites += 1
             if num_sync_sites == 1:
@@ -369,15 +450,18 @@ class Cell(object):
 
     def _create_admin(self, admin):
         logger.info("Creating the admin user %s.", admin)
+        # Due to a bug in some versions of OpenAFS, the db drops quorum the
+        # first time we write to it after the first election. Wait at least
+        # ubik BIGTIME and retry.
         try:
-            pts('createuser', '-name', admin)
+            pts('createuser', '-name', admin, retry=1, wait=80)
         except CommandFailed as e:
-            if not "Entry for name already exists" in e.err:
+            if not "Entry for name already exists" in e.out:
                 raise
         try:
             pts('adduser', '-user', admin, '-group', 'system:administrators')
         except CommandFailed as e:
-            if not "Entry for id already exists" in e.err:
+            if not "Entry for id already exists" in e.out:
                 raise
 
     def _wscell(self):
@@ -390,13 +474,11 @@ class Cell(object):
         logger.info("Cell is %s", self.cell)
         return cell
 
-    def _mount(self, root, mtpt, volume):
-        path = os.path.join(root, mtpt)
+    def _mount(self, path, volume, *opts):
         if not os.path.exists(path):
-            fs('mkmount', '-dir', path, '-vol', volume)
-        path = os.path.join(root, ".%s" % (mtpt))
-        if not os.path.exists(path):
-            fs('mkmount', '-dir', path, '-vol', volume, '-rw')
+            msg = ' as read-write' if '-rw' in opts else ''
+            logger.info("Mounting '%s' on path '%s'%s.", volume, path, msg)
+            fs('mkmount', '-dir', path, '-vol', volume, *opts)
 
     def _create_replica(self, name):
         output = vos('listvldb', '-name', name, '-quiet')
@@ -404,10 +486,10 @@ class Cell(object):
             logger.info("Skipping replication of %s; already have a read only site", name)
             return
         server,partition = re.findall(r'^\s+server (\S+) partition (\S+) RW Site', output, re.M)[0]
-        # Sometimes the db drops quorum the first time we write to it after the
-        # first election. vos fails with a uquorum error and and the volume is
-        # left locked. Use this closure to unlock the the volume before
-        # retrying the vos command.
+        # Due to a bug in some versions of OpenAFS, the db drops quorum the
+        # first time we write to it after the first election. vos fails with a
+        # uquorum error and and the volume is left locked. Use this closure to
+        # unlock the the volume before retrying the vos command.
         def _unlocker(name):
             def _unlock():
                 try:
@@ -432,29 +514,39 @@ class Cell(object):
             f = ', '.join(failed)
             raise AssertionError("Failed to reach bosserver on host%s %s" % (s, f))
 
+    def _shutdown_hosts(self):
+        """Shutdown the services on all the hosts."""
+        for host in self.hosts:
+            host.shutdown_all()
+
     def _setup_first_db_server(self):
         """Setup the initial database server and db files."""
-        logger.info("Setting up the first database server.")
+        db = self.db[0]
+        logger.info("Setting up the first database server %s." % db.hostname)
 
         # Setup the cell info for a single database server so the empty db can
         # be created and quorum established.
-        self.primary_db.setcellname(self.cell)
-        self.primary_db.setcellhosts([self.primary_db])
+        db.setcellname(self.cell)
+        db.setcellhosts([self.db[0]])
         for dbname in DBNAMES:
-            self.primary_db.create_database(dbname, self.options)
-            self.primary_db.wait_for_status(dbname, target='running')
+            db.create_database(dbname)
+            db.wait_for_status(dbname, target='running')
 
-        # Wait for for the empty db to be created and quorum established on
-        # this single db server for each database type. The database servers
-        # create emtpy prdb and vldb databases as side-effect of these queries,
-        # including the creation of the initial ubik database versions.
+        logger.info("Waiting for quorum.")
+        time.sleep(2) # Give the servers a chance to start
+        for dbname in DBNAMES:
+            self._wait_for_quorum(dbname, [db])
+
+        # The database servers create emtpy prdb and vldb databases as
+        # side-effect of these queries, including the creation of the initial
+        # ubik database versions.
         pts('listentries', retry=10)
         vos('listvldb', retry=10)
 
         # Create the superusers and add them to this first server's userlist.
         for admin in self.admins:
             self._create_admin(admin)
-            self.primary_db.adduser(admin)
+            db.adduser(admin)
 
     def _add_db_servers(self):
         """Setup the remaining database servers."""
@@ -463,8 +555,8 @@ class Cell(object):
         # Shutdown the primary server since we are changing the
         # cell hosts on it.
         for dbname in DBNAMES:
-            self.primary_db.shutdown(dbname)
-            self.primary_db.wait_for_status(dbname, target='shutdown')
+            self.db[0].shutdown(dbname)
+            self.db[0].wait_for_status(dbname, target='shutdown')
         time.sleep(1)
 
         # Set the cell hosts on all the db servers, including the primary.
@@ -472,53 +564,90 @@ class Cell(object):
         # the normal setup.
         for host in self.db:
             host.setcellname(self.cell)
-            host.setcellhosts([self.primary_db])
+            host.setcellhosts([self.db[0]])
             host.setcellhosts(self.db)
 
         # Restart the primary and create the other database hosts.
         # Use udebug to verify quorum is established.
         for dbname in DBNAMES:
-            self.primary_db.restart(dbname)
-            self.primary_db.wait_for_status(dbname, target='running')
+            self.db[0].restart(dbname)
+            self.db[0].wait_for_status(dbname, target='running')
             for host in self.db:
-                if host != self.primary_db:
+                if host != self.db[0]:
                     for admin in self.admins:
-		        host.adduser(admin)
-                    host.create_database(dbname, self.options)
+                        host.adduser(admin)
+                    host.create_database(dbname)
                     host.wait_for_status(dbname, target='running')
 
         logger.info("Waiting for quorum.")
         time.sleep(15)
         for dbname in DBNAMES:
-            self._wait_for_quorum(dbname)
+            self._wait_for_quorum(dbname, self.db)
 
     def _add_fs_servers(self):
         """Add remaining file servers."""
         for server in self.fs:
-            if server != self.primary_fs:
-                self.add_fileserver(server)
+            if server != self.fs[0]:
+                self.addfs(server)
 
     def _setup_first_fs_server(self):
         """Startup the file server processes and create the root volumes if needed."""
-        logger.info("Setting up the first file server.")
-        if self.primary_fs != self.primary_db:
-            self.primary_db.setcellname(self.cell)
-            self.primary_db.setcellhosts([self.primary_db])
+        fs = self.fs[0]
+        logger.info("Setting up the first file server %s." % fs.hostname)
+        if fs != self.db[0]:
+            fs.setcellname(self.cell)
+            fs.setcellhosts([self.db[0]])
             for admin in self.admins:
-                self.primary_fs.adduser(admin)
-
-        bnode = _optfsbnode(self.options)
-        self.primary_fs.create_fileserver(bnode, self.options)
-        self.primary_fs.wait_for_status(bnode, target='running')
+                fs.adduser(admin)
+        fs.create_fileserver()
+        bnode = 'dafs' if fs.dafs else 'fs'
+        fs.wait_for_status(bnode, target='running')
 
         # Note: root.afs must exist before non-dynroot clients are started.
-        self.primary_fs.create_volume('root.afs')
-        self.primary_fs.create_volume('root.cell')
+        fs.create_volume('root.afs')
+        fs.create_volume('root.cell')
+
+    def login(self, user):
+        """Obtain a token for this cell.
+
+        This function may be invoked after newcell() on a running client
+        to obtain an AFS token.
+        """
+        if self.akimpersonate:
+            self._akimpersonate(user)
+        else:
+            self._kinit_aklog(user)
 
     def newcell(self):
-        """Setup a new cell."""
+        """Setup a new OpenAFS cell.
+
+        This is the server side setup of the new cell.  This function should be
+        run on a new system which has the servers installed, and the bosserver
+        running. The OpenAFS commands are run with the -localauth option to
+        configure the cell. Only OpenAFS commands are used to access remote
+        systems, so any remote configuration which requires remote shell access
+        (e.g. ssh) must be done prior to running newcell().
+
+        Preconditions:
+        1. The vicep partitions must exist and be empty on each host.
+        2. The OpenAFS server programs must be installed on the localhost.
+        3. The OpenAFS server programs must be installed on the remote hosts.
+        4. The NetInfo/NetRestict configuration must be completed on each host.
+        5. The Kerberos service key must be set on each host.
+        6. The OpenAFS bosserver must be running on each host.
+        7. The OpenAFS client must be installed on the localhost.
+        8. The OpenAFS client cell config must be set (ThisCell and CellServDB)
+        9. The OpenAFS client must be already running in dynroot mode *OR*
+           must be startable with afsutil.system.start()
+
+        Postconditions:
+        1. The database servers are configured and running.
+        2. The fileservers are configured and running.
+        3. A set of admin and regular users are created.
+        """
         logger.info("Setting up new cell.")
-        self.ping_hosts()
+        self.ping_hosts()      # bosserver must be running on each
+        self._shutdown_hosts() # before the CellServDBs are changed
         self._setup_first_db_server()
         self._setup_first_fs_server()
         if len(self.db) > 1:
@@ -526,7 +655,7 @@ class Cell(object):
         if len(self.fs) > 1:
             self._add_fs_servers()
 
-    def add_fileserver(self, host):
+    def addfs(self, host):
         """Add a fileserver to this cell.
 
         The remote host must have the binaries installed, the service key
@@ -535,47 +664,47 @@ class Cell(object):
         and then create the bosserver configuration to run the fileserver.
         """
         if isinstance(host, basestring):
-            host = Host(host)
+            host = Host(host, options=self.options)
         logger.info("Adding fileserver %s", host.hostname)
         host.setcellname(self.cell)
         host.setcellhosts(self.db)
         for admin in self.admins:
             host.adduser(admin)
-        bnode = _optfsbnode(self.options)
-        host.create_fileserver(bnode, self.options)
+        host.create_fileserver()
 
-    def mount_root_volumes(self, dynroot):
+    def mtroot(self, volumes):
         """Mount, setup acls, and replicate the root.afs and root.cell volumes.
 
-        dynroot: True if the cache manager was started with -dynroot or -dynroot-sparse.
-
-        Note: It would be nice if dynroot mode could be could be detected, but the OpenAFS
-              cache manager does not provide a way to do so at this time.
+        This function should be run on a system which has a running cache
+        manager, after the Cell.newcell() function has been invoked on the
+        server.
 
         Preconditions:
         1. The root.afs and root.cell volumes must exist.
-        2. The cache manager must be running, with or without -dynroot.
-        3. An token with admin privileges has been acquired.
+        2. The servers must be running (on the local or remote hosts).
+        3. The cache manager must be running (with or without -dynroot).
 
         Post-conditions:
         1. The root.afs.readonly and root.cell.readonly volumes exist.
         2. The path /afs/<cellname> resolves to the root.cell.readonly root vnode.
         3. The path /afs/.<cellname> resolves to the root.cell root vnode.
         4. The path /afs/.<cellname>/.afs resolves to the root.afs root vnode.
+        5. The optional list of given volumes are mounted and replicated under
+           /afs/<cellname>
 
-        If the cache manager is currently running in dynroot mode, the special
-        /afs/.<cellname>/.afs mount point is created first, in order to
-        reach the root.afs vnode to add cell mount points.
-
-        If the cache manager is not currently running in dynroot mode, the
-        special /afs/.<cellname>/.afs mount point is created first anyway
-        in case it is needed later when dynroot is turned on, on this client or
-        others.
+        The special mount point '/afs/.<cellname>/.afs' is created in order to
+        to add mount points to the root.cell volume on cache managers running
+        dynroot mode.
 
         Note: In the past, this function attempted to create the cellular mount
         point using the magic '.:mount' path when the cache manager was running
         in dynroot mode.  However we found this did not work on Solaris unless
         the -fakestat option was also given. This is arguably an OpenAFS bug.
+
+        Note: It would be nice if dynroot mode could be could be detected, but
+        the OpenAFS cache manager does not provide a nice and portable way to
+        do so at this time, so we pass the afsd options used during the cache
+        manager install to detect if dynroot is enabled.
         """
         # First, verify AFS is mounted and find the mount point to it, e.g., /afs
         afs = afs_mountpoint()
@@ -590,20 +719,26 @@ class Cell(object):
         if cell != self.cell:
             raise AssertionError("Client side ThisCell file does not match the cell name!")
 
-        def _mount(path, volume, *opts):
-            if not os.path.exists(path):
-                msg = ' as read-write' if '-rw' in opts else ''
-                logger.info("Mounting '%s' on path '%s'%s.", volume, path, msg)
-                fs('mkmount', '-dir', path, '-vol', volume, *opts)
+        # Get an admin token to mount the volumes and set the acls.
+        user = self.admins[0]
+        self.login(user)
 
+        # Replicate our root volumes.
+        self._create_replica('root.afs')
+        self._create_replica('root.cell')
+
+        # Mount the root volumes.
+        afsd_options = self.options.get('afsd', '')
+        dynroot = '-dynroot' in afsd_options
         if not dynroot:
-            _mount("%(afs)s/%(cell)s" % locals(), 'root.cell', '-cell', cell)
-            _mount("%(afs)s/.%(cell)s" % locals(), 'root.cell', '-cell', cell, '-rw')
-            _mount("%(afs)s/.%(cell)s/.afs" % locals(), 'root.afs', '-rw') # for dynroot clients
+            self._mount("%(afs)s/%(cell)s" % locals(), 'root.cell', '-cell', cell)
+            self._mount("%(afs)s/.%(cell)s" % locals(), 'root.cell', '-cell', cell, '-rw')
+            self._mount("%(afs)s/.%(cell)s/.afs" % locals(), 'root.afs', '-rw') # for dynroot clients
         else:
-            _mount("%(afs)s/.%(cell)s/.afs" % locals(), 'root.afs', '-rw')
-            _mount("%(afs)s/.%(cell)s/.afs/%(cell)s" % locals(), 'root.cell', '-cell', cell)
-            _mount("%(afs)s/.%(cell)s/.afs/.%(cell)s" % locals(), 'root.cell', '-cell', cell, '-rw')
+            self._mount("%(afs)s/.%(cell)s/.afs" % locals(), 'root.afs', '-rw')
+            self._mount("%(afs)s/.%(cell)s/.afs/%(cell)s" % locals(), 'root.cell', '-cell', cell)
+            self._mount("%(afs)s/.%(cell)s/.afs/.%(cell)s" % locals(), 'root.cell', '-cell', cell, '-rw')
+        fs('checkvolumes')
 
         # Grant global read and list rights to the root /afs and /afs/<cell> paths.
         if not dynroot:
@@ -613,28 +748,33 @@ class Cell(object):
             fs('setacl', '-dir', "%(afs)s/.%(cell)s/.afs" % locals(), '-acl', 'system:anyuser', 'read')
             fs('setacl', '-dir', "%(afs)s/.%(cell)s" % locals(), '-acl', 'system:anyuser', 'read')
 
-        # Replicate our root volumes.
-        self._create_replica('root.afs')
-        self._create_replica('root.cell')
-        fs('checkvolumes')
-
-    def create_top_volumes(self, volumes):
-        """Create, mount, and replica one or more top-level volumes."""
-
-        afs = afs_mountpoint()
-        if afs is None:
-            raise AssertionError("Unable to mount volumes; afs is not mounted!")
-        cell = self._wscell()
-        if cell != self.cell:
-            raise AssertionError("Client side ThisCell file does not match the cell name!")
-
-        root_cell_rw = os.path.join(afs, ".%s" % (self.cell))
         # Place top level volumes on the same fileserver as the root volumes.
         for name in volumes:
-            self.primary_fs.create_volume(name)
-            self._mount(root_cell_rw, name, name)
-            fs('setacl', '-dir', os.path.join(root_cell_rw, name), '-acl', 'system:anyuser', 'read')
+            self.fs[0].create_volume(name)
             self._create_replica(name)
+            self._mount("%(afs)s/.%(cell)s/%(name)s" % locals(), name, '-cell', cell)
+            self._mount("%(afs)s/.%(cell)s/.%(name)s" % locals(), name, '-cell', cell, '-rw')
+            fs('setacl', '-dir', "%(afs)s/.%(cell)s/.%(name)s" % locals(), '-acl', 'system:anyuser', 'read')
         vos('release', '-id', 'root.cell')
         fs('checkvolumes')
 
+def newcell(**kwargs):
+    cell = Cell(**kwargs)
+    cell.newcell()
+
+def mtroot(**kwargs):
+    top = kwargs.pop('top', [])
+    cell = Cell(**kwargs)
+    cell.mtroot(top)
+
+def addfs(**kwargs):
+    hostname = kwargs.pop('hostname', socket.gethostname())
+    cell = Cell(**kwargs)
+    cell.addfs(hostname)
+
+def login(**kwargs):
+    if os.geteuid() == 0:
+        logger.warning("Running afsutil login as root! Your regular user will not have a token.")
+    user = kwargs.pop('user', 'admin')
+    cell = Cell(**kwargs)
+    cell.login(user)
