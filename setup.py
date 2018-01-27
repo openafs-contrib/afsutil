@@ -7,7 +7,7 @@ setup(
     description='Utilities to setup OpenAFS clients and servers',
     author='Michael Meffie',
     author_email='mmeffie@sinenomine.net',
-    url='http://www.sinenomine.net',
+    url='https://github.com/openafs-contrib/afsutil',
     license='BSD',
     packages=[
         'afsutil',
