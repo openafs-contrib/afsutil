@@ -20,13 +20,11 @@
 
 """Install and remove Transarc-style OpenAFS distributions."""
 
-import errno
 import logging
 import os
 import re
 import shutil
 import sys
-import socket
 import glob
 import pkg_resources
 import tempfile
@@ -179,6 +177,25 @@ class SolarisClientSetup(TransarcClientSetup):
 
     def _afs_driver(self):
         """Return the name of the afs driver for the current platform."""
+        osrel = os.uname()[2]
+        if osrel == '5.10':
+            return self._afs_driver_510()
+        elif osrel == '5.11':
+            return self._afs_driver_511()
+        else:
+            raise AssertionError("Unsupported operating system: %s" % (uname))
+
+    def _afs_driver_510(self):
+        output = sh('/bin/isalist', output=True)[0]
+        if 'amd64' in output:
+            driver = '/kernel/fs/amd64/afs'
+        elif 'sparcv9' in output:
+            driver = '/kernel/fs/sparcv9/afs'
+        else:
+            driver = '/kernel/fs/afs'
+        return driver
+
+    def _afs_driver_511(self):
         output = sh('/bin/isalist', output=True)[0]
         if 'amd64' in output:
             driver = '/kernel/drv/amd64/afs'
@@ -237,7 +254,7 @@ class TransarcInstaller(Installer):
                     if match:
                         sysname = match.group(1)
                         break
-        except IOError as e:
+        except IOError:
             pass
         return sysname
 

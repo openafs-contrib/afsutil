@@ -20,12 +20,10 @@
 
 """Install and remove Transarc-style OpenAFS distributions."""
 
-import errno
 import logging
 import os
 import re
 import shutil
-import sys
 import socket
 import glob
 import pprint
@@ -93,7 +91,7 @@ def _optlists2dict(options):
         return names
     for optlist in options:
         for o in optlist:
-            name,value = o.split('=')
+            name,value = o.split('=', 1)
             names[name.strip()] = value.strip()
     return names
 
@@ -307,7 +305,7 @@ class Installer(object):
                 self.dirs['AFS_DATA_DIR'],
                 self.dirs['AFS_MOUNT_DIR'],
                 self.dirs['AFS_CACHE_DIR'],
-                102400)
+                cache_size)
 
     def pre_remove(self):
         """Pre remove steps."""

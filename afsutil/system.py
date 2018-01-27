@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2015 Sine Nomine Associates
+# Copyright (c) 2014-2017 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -98,6 +98,7 @@ def run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
                    executable=cmd,
                    shell=False,
                    bufsize=-1,
+                   env=os.environ,
                    stdout=subprocess.PIPE,
                    stderr=subprocess.PIPE)
         output,error = proc.communicate()
@@ -132,7 +133,7 @@ def sh(*args, **kwargs):
     if not quiet:
         cmdline = subprocess.list2cmdline(args)
         logger.info("running %s", cmdline)
-    p = subprocess.Popen(args, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    p = subprocess.Popen(args, bufsize=1, env=os.environ, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     with p.stdout:
         for line in iter(p.stdout.readline, ''):
             line = line.rstrip("\n")
@@ -229,7 +230,8 @@ def afs_mountpoint():
         pattern = r'(/.\S+) on AFS'
     else:
         raise AssertionError("Unsupported operating system: %s" % (uname))
-    output = run('mount')
+    mount = which('mount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
+    output = run(mount)
     found = re.search(pattern, output, re.M)
     if found:
         mountpoint = found.group(1)
@@ -245,7 +247,8 @@ def afs_umount():
     """Attempt to unmount afs, if mounted."""
     afs = afs_mountpoint()
     if afs:
-        run('umount', args=[afs])
+        umount = which('umount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
+        run(umount, args=[afs])
 
 def nproc():
     """Return the number of processing units."""
@@ -301,8 +304,8 @@ def _linux_unload_module():
     for kmod in kmods:
         run('rmmod', args=[kmod])
 
-def _linux_load_module(kmod):
-    run('insmod', args=[kmod])
+def _linux_detect_gfind():
+    return which('find')
 
 def _solaris_network_interfaces_old():
     """Return a list of non-loopback networks interfaces."""
@@ -342,6 +345,9 @@ def _solaris_is_loaded(kmod):
             return mid
     return 0
 
+def _solaris_detect_gfind():
+    return which('gfind', extra_paths=['/opt/csw/bin'])
+
 def mkdirp(path):
     """Make a directory with parents."""
     # Do not raise an execption if the directory already exists.
@@ -358,7 +364,7 @@ def cat(files, path):
 
 def touch(path):
     """Touch a file; create a empty file if not already existing."""
-    with open(path, 'a') as f:
+    with open(path, 'a'):
         os.utime(path, None)
 
 def symlink(src, dst):
@@ -415,13 +421,6 @@ def _solaris_unload_module():
     if module_id != 0:
         run('modunload', args=["-i", module_id])
 
-def _solaris_load_module(kmod):
-    # Adpapted from the solaris openafs-client init script.
-    afs = '/kernel/drv/amd64/afs' # modern path
-    sh('cp', kmod, afs)
-    logger.info("Loading AFS kernel extensions.")
-    sh('modload', afs)
-
 def check_hosts_file():
     """Check for loopback addresses in the /etc/hosts file.
 
@@ -441,6 +440,23 @@ def check_hosts_file():
                         (line.split()[0], hostname, nr))
                     result = False
     return result
+
+def fix_hosts_file():
+    hostname = socket.gethostname()
+    ips = network_interfaces()
+    if len(ips) == 0:
+        raise AssertionError("Unable to detect any non-loopback network interfaces.")
+    ip = ips[0]
+
+    with open('/etc/hosts', 'r') as f:
+        hosts = f.read()
+
+    with open('/etc/hosts', 'w') as f:
+        for line in hosts.splitlines():
+            line = line.strip()
+            if not re.search(r'\b%s\b' % (hostname), line):
+                f.write("%s\n" % line)
+        f.write("%s\t%s\n" % (ip, hostname))
 
 def check_host_address():
     """Verify our hostname resolves to a useable address."""
@@ -463,7 +479,7 @@ if _uname == "Linux":
     is_loaded = _linux_is_loaded
     configure_dynamic_linker = _linux_configure_dynamic_linker
     unload_module = _linux_unload_module
-    load_module = _linux_load_module
+    detect_gfind = _linux_detect_gfind
 elif _uname == "SunOS":
     if _osrel == "5.10":
         network_interfaces = _solaris_network_interfaces_old
@@ -472,7 +488,7 @@ elif _uname == "SunOS":
     is_loaded = _solaris_is_loaded
     configure_dynamic_linker = _solaris_configure_dynamic_linker
     unload_module = _solaris_unload_module
-    load_module = _solaris_load_module
+    detect_gfind = _solaris_detect_gfind
 else:
-    raise AssertionError("Unsupported operating system: %s" % (uname))
+    raise AssertionError("Unsupported operating system: %s" % (_uname))
 
