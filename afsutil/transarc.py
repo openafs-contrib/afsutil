@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2015 Sine Nomine Associates
+# Copyright (c) 2014-2016 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -28,18 +28,19 @@ import shutil
 import sys
 import socket
 import glob
+import pkg_resources
+import tempfile
+import urllib2
 
-from afsutil.system import file_should_exist, directory_should_exist, directory_should_not_exist, \
-                           is_loaded, is_running, mkdirp, run, touch, cat, \
-                           network_interfaces, configure_dynamic_linker
+from afsutil.install import Installer, \
+                            copy_files, remove_file, remove_files
+
+from afsutil.system import sh, directory_should_exist, \
+                           configure_dynamic_linker, \
+                           is_loaded, is_running, mkdirp, path_join, \
+                           untar
 
 logger = logging.getLogger(__name__)
-
-#
-# Valid component names for install and remove.  This may be expanded in the
-# future if we want more fine grained installs.
-#
-COMPONENTS = ['client', 'server']
 
 #
 # Transarc style install paths.
@@ -75,185 +76,195 @@ UDEBUG = "/usr/afs/bin/udebug"
 UNLOG = "/usr/afsws/bin/unlog"
 VOS = "/usr/afs/bin/vos"
 
-# Basic init script to start and stop the servers
-# independently from the client.
-AFS_SERVER_RC = """#!/bin/bash
-# Basic init script to start/stop the OpenAFS servers.
-# chkconfig: 2345 49 51
+class TransarcClientSetup(object):
+    """Transarc client specific setup functions."""
 
-if [ -f /etc/rc.d/init.d/functions ] ; then
-    . /etc/rc.d/init.d/functions
-    afs_rh=1
-else
-    # special (RedHat) functions not available...
-    function echo_failure () { echo -n " - failed." ; }
-    function echo_success () { echo -n " - successful." ; }
-fi
+    def install_afsd(self, afsd):
+        """Install the afsd file."""
+        # Common for linux an solaris.
+        src = afsd
+        dst = AFS_KERNEL_DIR
+        logger.info("Installing afsd from '%s' to '%s'.", src, dst)
+        mkdirp(dst)
+        shutil.copy2(src, dst)
+        os.chmod(dst, 0755)
 
-is_on() {
-    if  test "$1" = "on" ; then return 0
-    else return 1
-    fi
-}
+class LinuxClientSetup(TransarcClientSetup):
+    """Linux specific setup functions."""
 
-SYSCNF=${SYSCNF:-/etc/sysconfig/afs}
-if [ -f $SYSCNF ] ; then
-    . $SYSCNF
-fi
+    def install_init_script(self, dest, afsd_options):
+        """Install a client init script on linux.
 
-BOS=${BOS:-/usr/afs/bin/bos}
-BOSSERVER=${BOSSERVER:-/usr/afs/bin/bosserver}
+        Does not configure the system to run the init script automatically on
+        reboot.
+        """
+        # Install the init script.
+        mkdirp("/var/lock/subsys/")
+        src = pkg_resources.resource_filename('afsutil', 'data/openafs-client-linux.init')
+        dst = "/etc/init.d/openafs-client"
+        logger.info("Installing client init script from '%s' to '%s'.", src, dst)
+        shutil.copy2(src, dst)
+        os.chmod(dst, 0755)
+        # Set afsd options.
+        dst = path_join(SYSCONFIG, "openafs-client")
+        logger.info("Writing afsd startup options to file '%s'." % (dst))
+        mkdirp(os.path.dirname(dst))
+        with open(dst, 'w') as f:
+            f.write('AFSD_OPTIONS="%s"\n' % (afsd_options))
 
-start() {
-    if [ ! "$afs_rh" -o ! -f /var/lock/subsys/afs-server ]; then
-        if test -x $BOSSERVER ; then
-            echo "Starting AFS servers..... "
-            $BOSSERVER
-            test "$afs_rh" && touch /var/lock/subsys/afs-server
-            if is_on $WAIT_FOR_SALVAGE; then
-                sleep 10
-                while $BOS status localhost fs 2>&1 | grep 'Auxiliary.*salvaging'; do
-                    echo "Waiting for salvager to finish..... "
-                    sleep 10
-                done
-            fi
-        fi
-    fi
-}
+    def _install_openafs_ko(self, kmod):
+        """Install the openafs.ko file and run depmod."""
+        release = os.uname()[2]
+        src = kmod
+        dst = path_join("/lib/modules", release, "extra/openafs/openafs.ko")
+        logger.info("Installing kernel module from '%s' to '%s'.", src, dst)
+        mkdirp(os.path.dirname(dst))
+        shutil.copy2(src, dst)
+        sh('/sbin/depmod', '-a')
 
-stop() {
-    if [ ! "$afs_rh" -o -f /var/lock/subsys/afs-server ]; then
-        if  test -x $BOS ; then
-            echo "Stopping AFS servers..... "
-            $BOS shutdown localhost -localauth -wait
-            pkill -HUP bosserver
-        fi
-        rm -f /var/lock/subsys/afs-server
-    fi
-}
+    def install_driver(self, dest, force=False):
+        #
+        # If available, install the openafs.ko to a path loadable by modprobe.
+        # Use the openafs configure option --with-linux-kernel-packaging to build
+        # openafs.ko instead of libafs${version}.ko
+        #
+        # Note: libafs${version}.ko was already installed by copying all the files from
+        #       dest/root.client/usr/vice/etc to /usr/vice/etc.
+        #
+        release = os.uname()[2]
+        kmod = path_join(dest, "root.client", "lib/modules", release, "extra/openafs/openafs.ko")
+        if os.path.exists(kmod):
+            self._install_openafs_ko(kmod)
 
-case "$1" in
-  start)
-      start
-      ;;
-  stop)
-      stop
-      ;;
-  restart)
-      $0 stop
-      $0 start
-      ;;
-  *)
-      echo $"Usage: $0 {start|stop|restart}"
-      exit 1
-esac
-"""
+    def remove_driver(self):
+        release = os.uname()[2]
+        src = path_join("/lib/modules", release, "extra/openafs/openafs.ko")
+        if os.path.exists(src):
+            remove_file(src)
 
-def _check_component_names(components=None):
-    """Check the given list of component names.
+    def install_kmod(self, kmod):
+        """Install the kernel module by filename."""
+        if os.path.basename(kmod) == 'openafs.ko':
+            self._install_openafs_ko(kmod)
+        elif os.path.basename(kmod).startswith('libafs'):
+            src = kmod
+            dst = path_join(AFS_KERNEL_DIR, 'modload')
+            logger.info("Installing kernel module from '%s' to '%s'.", src, dst)
+            shutil.copy2(src, dst)
+        else:
+            raise ValueError("Unknown kernel module name: %s" % (kmod))
 
-    components may be a string consisting of a comma separated list of names,
-    or a list() of strings.  Returns a list of valid component names with
-    duplicates removed.  Raises a value error if an unknown component name
-    is given.
-    """
-    all_ = set(COMPONENTS)
-    if components is None:
-        components = all_
-    else:
-        if isinstance(components, basestring):
-            components = components.split(",")
-        components = set(components)
-    unknown = components.difference(all_)
-    if unknown:
-        msg = "Unknown component%s: %s" % \
-            ("s" if len(unknown)>1 else "", ", ".join(unknown))
-        raise ValueError(msg)
-    return list(components)
+class SolarisClientSetup(TransarcClientSetup):
+    """Solaris specific setup functions."""
 
-def _solaris_afs_driver():
-    """Return the name of the afs driver for the current platform."""
-    out = run('/bin/isalist')
-    if 'amd64' in out:
-        driver = '/kernel/drv/amd64/afs'
-    elif 'sparcv9' in out:
-        driver = '/kernel/drv/sparcv9/afs'
-    else:
-        driver = '/kernel/drv/afs'
-    return driver
+    def install_init_script(self, dest, afsd_options):
+        """Install a client init script on solaris.
 
+        Does not configure the system to run the init script automatically on
+        reboot.  Changes the init script to avoid starting the bosserver
+        by default."""
+        osrel = os.uname()[2]
+        src = pkg_resources.resource_filename('afsutil', 'data/openafs-client-solaris-%s.init' % (osrel))
+        dst = "/etc/init.d/openafs-client"
+        logger.info("Installing client init script from '%s' to '%s'.", src,dst)
+        shutil.copy2(src, dst)
+        os.chmod(dst, 0755)
+        # Set afsd options.
+        config = '/usr/vice/etc/config'
+        dst = path_join(config, 'afsd.options')
+        logger.info("Writing afsd startup options to file '%s'." % (dst))
+        mkdirp(os.path.dirname(dst))
+        with open(dst, 'w') as f:
+            f.write(afsd_options) # Not sourced.
 
-class TransarcInstaller(object):
+    def _afs_driver(self):
+        """Return the name of the afs driver for the current platform."""
+        output = sh('/bin/isalist', output=True)[0]
+        if 'amd64' in output:
+            driver = '/kernel/drv/amd64/afs'
+        elif 'sparcv9' in output:
+            driver = '/kernel/drv/sparcv9/afs'
+        else:
+            driver = '/kernel/drv/afs'
+        return driver
+
+    def install_driver(self, dest):
+        afs = "libafs64.o"
+        kmod = path_join(dest, "root.client", AFS_KERNEL_DIR, "modload", afs)
+        self.install_kmod(kmod)
+
+    def remove_driver(self):
+        remove_file(self._afs_driver())
+        remove_file('/kernel/drv/afs.conf')
+
+    def install_kmod(self, kmod):
+        """Install the kernel module by filename."""
+        src = kmod
+        dst = self._afs_driver()
+        logger.info("Installing kernel driver from '%s' to '%s'.", src, dst)
+        shutil.copy2(src, dst)
+
+class TransarcInstaller(Installer):
     """Install a Transarc-style distribution of OpenAFS on linux or solaris."""
 
-    def __init__(self, dest=None, cell='localcell', hosts=None, realm=None, csdb=None, force=False, **kwargs):
+    def __init__(self, **kwargs):
         """Initialize the Transarc-style installer.
 
-        dest: path to the 'dest' directory created by previous make dest
-              If None, try to detect the sysname and find the dest directory
-              in the current working directory.
-        cell: afs cell name to be configured
-        hosts: hosts to set in CellServDB files. If none, use the current
-               machine (non-loopback) address
-        realm: kerberos realm name, if different than the cell naem
-        force: overwrite existing files, otherwise raise an AssertionError
-        csdb:  path to optional CellServDB.dist listing foreign cells
         """
-        if dest is None:
-            raise AssertionError("dest directory is None.")
-        if realm is None:
-            realm = cell.upper()
-        directory_should_exist(dest)
-        directory_should_exist(os.path.join(dest, 'root.server'))
-        directory_should_exist(os.path.join(dest, 'root.client'))
-        directory_should_exist(os.path.join(dest, 'lib'))
-        if csdb is not None:
-            file_should_exist(csdb)
+        Installer.__init__(self, **kwargs)
+        self.bins = kwargs.get('dir', None)
+        self.tmpfile = None
+        self.tmpdir = None
+        self.url = None
+        self.tarball = None
+        self.dest = None
+        uname = os.uname()[0]
+        if uname == "Linux":
+            self.client_setup = LinuxClientSetup()
+        elif uname == "SunOS":
+            self.client_setup = SolarisClientSetup()
+        else:
+            raise AssertionError("Unsupported operating system: %s" % (uname))
         self.installed = {'libs':False, 'client':False, 'server':False, 'ws':False}
-        self.dest = dest
-        self.cell = cell
-        self.realm = realm
-        self.force = force
-        self.csdb = csdb
-        if hosts is None or len(hosts) == 0:
-            self.hosts = [(network_interfaces()[0], os.uname()[1])]
-        else:
-            self.hosts = []
-            for name in hosts:
-                addr = socket.gethostbyname(name) # works for quad-dot too
-                self.hosts.append((addr, name))
 
-    def _ignore_symlinks(self, path, names):
-        ignore = []
-        for name in names:
-            if os.path.islink(os.path.join(path, name)):
-                ignore.append(name)
-        return ignore
+    def _detect_sysname(self):
+        """Try to detect the sysname from the previous build output."""
+        sysname = None
+        try:
+            with open("src/config/Makefile.config", "r") as f:
+                for line in f.readlines():
+                    match = re.match(r'SYS_NAME\s*=\s*(\S+)', line)
+                    if match:
+                        sysname = match.group(1)
+                        break
+        except IOError as e:
+            pass
+        return sysname
 
-    def _copy_files(self, src, dst, symlinks=True):
-        directory_should_exist(src, "Source directory '%s' does not exist!" % src)
-        if self.force:
-            if os.path.exists(dst):
-                if not (dst.startswith("/usr/afs/") or
-                        dst.startswith("/usr/afsws/") or
-                        dst.startswith("/usr/vice/")):
-                    raise AssertionError("Refusing to remove unrecognized directory %s" % (dst))
-                logger.info("Removing previous '%s' directory.", dst)
-                shutil.rmtree(dst)
+    def _detect_dest(self):
+        """Try to detect the dest directory from the previous build.
+        This is used to install bins after building binaries."""
+        dest = None
+        sysname = self._detect_sysname()
+        if sysname:
+            dest = "%s/dest" % (sysname)
         else:
-            directory_should_not_exist(dst, "Destination directory '%s' already exists! "
-                                            "(use --force to override)" % dst)
-        logger.info("Installing files from '%s' to '%s'." % (src, dst))
-        if symlinks:
-            shutil.copytree(src, dst)
-        else:
-            shutil.copytree(src, dst, ignore=self._ignore_symlinks)
+            raise ValueError("Unable to find dest directory.")
+        return dest
+
+    def _check_dest(self, dest):
+        """Verify the dest directory looks sane."""
+        directory_should_exist(dest)
+        directory_should_exist(path_join(dest, 'root.server'))
+        directory_should_exist(path_join(dest, 'root.client'))
+        directory_should_exist(path_join(dest, 'lib'))
 
     def _install_shared_libs(self, src, dst):
+        """Install the shared libraries."""
         if self.installed['libs']:
             logger.debug("Skipping shared libs install; already done.")
         else:
-            self._copy_files(src, dst, symlinks=False)
+            copy_files(src, dst, symlinks=False, force=self.force)
             configure_dynamic_linker(dst)
             self.installed['libs'] = True
 
@@ -268,13 +279,19 @@ class TransarcInstaller(object):
         Does not configure the system to run the init script automatically on
         reboot.
         """
-        mkdirp("/var/lock/subsys/")
+        src = pkg_resources.resource_filename('afsutil', 'data/openafs-server.init')
         dst = "/etc/init.d/openafs-server"
         if os.path.exists(dst) and not self.force:
-            raise AssertionError("Refusing to overwrite '%s'. (use --force to override)", dst)
-        with open(dst, 'w') as f:
-            f.write(AFS_SERVER_RC)
+            raise AssertionError("Refusing to overwrite '%s'.", dst)
+        shutil.copy2(src, dst)
         os.chmod(dst, 0755)
+        mkdirp("/var/lock/subsys/")  # needed by the init script
+        # Set the bosserver command line options.
+        dst = path_join(SYSCONFIG, "openafs-server")
+        logger.info("Writing bosserver startup options to file '%s'." % (dst))
+        mkdirp(os.path.dirname(dst))
+        with open(dst, 'w') as f:
+            f.write('BOSSERVER_OPTIONS="%s"\n' % (self.options.get('bosserver', '')))
 
     def _install_workstation_binaries(self):
         """Install workstation binaries from a Transarc-style distribution."""
@@ -282,241 +299,171 @@ class TransarcInstaller(object):
             logger.debug("Skipping workstation files install; already done.")
         else:
             for d in ('bin', 'etc', 'include', 'man'):
-                src = os.path.join(self.dest, d)
-                dst = os.path.join(AFS_WS_DIR, d)
-                self._copy_files(src, dst)
+                src = path_join(self.dest, d)
+                dst = path_join(AFS_WS_DIR, d)
+                copy_files(src, dst, force=self.force)
             self.installed['ws'] = True
-        src = os.path.join(self.dest, 'lib')
-        dst = os.path.join(AFS_WS_DIR, 'lib')
+        src = path_join(self.dest, 'lib')
+        dst = path_join(AFS_WS_DIR, 'lib')
         self._install_shared_libs(src, dst)
-
-    def _linux_install_client_rc(self):
-        """Install a client init script on linux.
-
-        Does not configure the system to run the init script automatically on
-        reboot.
-        """
-        # Install the init script.
-        mkdirp("/var/lock/subsys/")
-        kdir = AFS_KERNEL_DIR.lstrip('/')
-        src = os.path.join(self.dest, "root.client", kdir, "afs.rc")
-        dst = "/etc/init.d/openafs-client"
-        if os.path.exists(dst) and not self.force:
-            raise AssertionError("Refusing to overwrite '%s'. (use --force to override)", dst)
-        logger.info("Installing client init script from '%s' to '%s'.", src, dst)
-        shutil.copy2(src, dst)
-        # Install the default startup configuration.
-        src = os.path.join(self.dest, "root.client", kdir, "afs.conf")
-        dst = os.path.join(SYSCONFIG, "afs")
-        logger.info("Writing client startup options to file '%s'.", dst)
-        mkdirp(SYSCONFIG)
-        shutil.copy2(src, dst)
-
-    def _solaris_install_driver(self):
-        kdir = AFS_KERNEL_DIR.lstrip('/')
-        afs = "libafs64.o"
-        src = os.path.join(self.dest, "root.client", kdir, "modload", afs)
-        dst = _solaris_afs_driver()
-        if os.path.exists(dst) and not self.force:
-            raise AssertionError("Refusing to overwrite '%s'. (use --force to override)", dst)
-        logger.info("Installing kernel driver from '%s' to '%s'.", src, dst)
-        shutil.copy2(src, dst)
-
-    def _solaris_install_client_rc(self):
-        """Install a client init script on solaris.
-
-        Does not configure the system to run the init script automatically on
-        reboot.  Changes the init script to avoid starting the bosserver
-        by default."""
-        kdir = AFS_KERNEL_DIR.lstrip('/')
-        src = os.path.join(self.dest, "root.client", kdir, "modload", "afs.rc")
-        dst = "/etc/init.d/openafs-client"
-        if os.path.exists(dst) and not self.force:
-            raise AssertionError("Refusing to overwrite '%s'. (use --force to override)", dst)
-        logger.info("Installing client init script from '%s' to '%s'.", src,dst)
-        with open(src, 'r') as f:
-            script = f.read()
-        with open(dst, 'w') as f:
-            for line in script.splitlines():
-                line = line.replace(
-                    'if [ -x /usr/afs/bin/bosserver ]; then',
-                    'if [ "${AFS_SERVER}" = "on" -a -x /usr/afs/bin/bosserver ]; then')
-                line = line.replace(
-                    'if [ "${bosrunning}" != "" ]; then',
-                    'if [ "${AFS_SERVER}" = "on" -a "${bosrunning}" != "" ]; then')
-                f.write(line)
-                f.write("\n")
-        os.chmod(dst, 0755)
-        # Setup afsd options.
-        CONFIG = "/usr/vice/etc/config"
-        AFSDOPT = os.path.join(CONFIG, "afsd.options")
-        mkdirp(CONFIG)
-        with open(AFSDOPT, 'w') as f:
-            f.write("-dynroot -fakestat")
-
-    def _set_cell_config(self, path, ext=""):
-        """Write a default CellServDB and ThisCell file."""
-        # The bosserver creates symlinks for the client side configuration. Be
-        # sure to remove the symlinks so we do not clobber the server
-        # configuration.
-        mkdirp(path)
-        cellservdb = os.path.join(path, "CellServDB%s" % (ext))
-        if os.path.islink(cellservdb):
-            os.remove(cellservdb)
-        with open(cellservdb, 'w') as f:
-            f.write(">%s    #Cell name\n" % (self.cell))
-            for addr,name in self.hosts:
-                f.write("%s         #%s\n"  % (addr,name))
-        thiscell = os.path.join(path, "ThisCell")
-        if os.path.islink(thiscell):
-            os.remove(thiscell)
-        with open(thiscell, 'w') as f:
-            f.write(self.cell)
-
-    def _set_cache_info(self, path, root, cache, size):
-        """Create the cacheinfo file."""
-        dst = os.path.join(path, 'cacheinfo')
-        with open(dst, 'w') as f:
-            f.write("%s:%s:%d\n" % (root, cache, size))
 
     def _install_server(self):
         """Install server binaries."""
-        for path in ["/vicepa", "/vicepb"]:
-            if not os.path.exists(path):
-                logger.info("Making vice partition '%s'.", path)
-                os.mkdir(path)
-                touch(os.path.join(path, "AlwaysAttach"))
-        src = os.path.join(self.dest, "root.server", AFS_SRV_BIN_DIR.lstrip('/'))
-        self._copy_files(src, AFS_SRV_BIN_DIR)
-        self._install_shared_libs(os.path.join(self.dest, 'lib'), AFS_SRV_LIB_DIR)
-        # rxdebug is in the ws directory; be sure to install one on the server.
-        self._install_workstation_binaries()
-        self._set_cell_config(AFS_CONF_DIR)
-        if self.cell != self.realm.lower():
-            with open(os.path.join(AFS_CONF_DIR, "krb.conf"), 'w') as f:
-                f.write("%s\n" % (self.realm))
-        os.chmod(AFS_CONF_DIR, 0755)  # Make the bosserver happy.
+        logger.info("Installing server binaries")
+        src = path_join(self.dest, "root.server", AFS_SRV_BIN_DIR)
+        copy_files(src, AFS_SRV_BIN_DIR, force=self.force)
+        self._install_shared_libs(path_join(self.dest, 'lib'), AFS_SRV_LIB_DIR)
+        self._install_workstation_binaries() # rxdebug is in the ws directory.
         self._install_server_rc()
         self.installed['server'] = True
         logger.info("Servers installed.")
 
     def _install_client(self):
         """Install client binaries."""
-        kdir = AFS_KERNEL_DIR.lstrip('/')
-        uname = os.uname()[0]
-        src = os.path.join(self.dest, "root.client", kdir)
-        self._copy_files(src, AFS_KERNEL_DIR)
+        logger.info("Installing client binaries")
+        src = path_join(self.dest, "root.client", AFS_KERNEL_DIR)
+        copy_files(src, AFS_KERNEL_DIR, force=self.force) # also installs libafs.ko
         self._install_workstation_binaries() # including libs, unless already installed
-        # Create the CellServDB and ThisCell files. Remove any symlinks that
-        # my have been created by the bosserver. Combine the optional CellServDB.dist
-        # to access other cells.
-        csdb = os.path.join(AFS_DATA_DIR, "CellServDB")
-        local = os.path.join(AFS_DATA_DIR, "CellServDB.local")
-        dist = os.path.join(AFS_DATA_DIR, "CellServDB.dist")
-        self._set_cell_config(AFS_DATA_DIR, ext=".local")
-        if self.csdb:
-            shutil.copyfile(self.csdb, dist)
-        else:
-            touch(dist)
-        cat([local, dist], csdb)
-        # Create the required directories, if not already present.
+        self.client_setup.install_driver(self.dest)
+        self.client_setup.install_init_script(self.dest, self.options.get('afsd', ''))
         mkdirp(AFS_MOUNT_DIR)
         mkdirp(AFS_CACHE_DIR)
-        # The cachesize will be updated by the init script by default.
-        # (At least on linux)
-        self._set_cache_info(AFS_DATA_DIR, AFS_MOUNT_DIR, AFS_CACHE_DIR, 102400)
-        if uname == "Linux":
-            self._linux_install_client_rc()
-        elif uname == "SunOS":
-            self._solaris_install_driver()
-            self._solaris_install_client_rc()
-        else:
-            raise AssertionError("Unsupported operating system: %s" % (uname))
         self.installed['client'] = True
         logger.info("Client installed.")
 
-    def install(self, components=None):
-        """Install Transarc-style binaries."""
-        components = _check_component_names(components)
-        # Always install the server first.
-        if 'server' in components:
-            self._install_server()
-        if 'client' in components:
-            self._install_client()
-
-class TransarcUninstaller(object):
-    """Remove a Transarc-style distribution of OpenAFS."""
-    def __init__(self, purge=False, **kwargs):
-        self.purge = purge
-        self.verbose = kwargs.get('verbose', False)
-
-    def _remove_file(self, path):
-        if os.path.exists(path):
-            logger.info("Removing %s", path)
-            os.remove(path)
-
-    def _remove_files(self, path, quiet=False):
-        if not os.path.exists(path):
-            return
-        if not (path.startswith("/usr/afs/") or
-                path.startswith("/usr/afsws/") or
-                path.startswith("/usr/vice/")):
-            raise AssertionError("Refusing to remove unrecognized directory %s" % (path))
-        if not quiet:
-            logger.info("Removing %s", path)
-        shutil.rmtree(path)
-
-    def _purge_volumes(self, path):
-        logger.info("Purging volume data in '%s'.", path)
-        afsidat = os.path.join(path, 'AFSIDat')
-        if os.path.exists(afsidat):
-            shutil.rmtree(afsidat)
-        for vol in glob.glob(os.path.join(path, "*.vol")):
-            os.remove(vol)
-
-    def _purge_cache(self):
-        if os.path.exists("/usr/vice/cache"):
-            self._remove_file("/usr/vice/cache/CacheItems")
-            self._remove_file("/usr/vice/cache/CellItems")
-            self._remove_file("/usr/vice/cache/VolumeItems")
-            logger.info("Removing /usr/vice/cache/D* files.")
-            for d in os.listdir("/usr/vice/cache"):
-                if re.match(r'^D\d+$', d):
-                    self._remove_files("/usr/vice/cache/%s" % (d), quiet=(not self.verbose))
-
     def _remove_server(self):
+        """Remove the server binaries."""
         if is_running('bosserver'):
             raise AssertionError("Refusing to remove: bosserver is running.")
-        self._remove_files("/usr/afs/bin/")
-        self._remove_files("/usr/afs/lib/")
-        self._remove_file("/etc/init.d/openafs-server")
-        if self.purge:
-            self._remove_files("/usr/afs/")
-            for part in glob.glob('/vicep*'):
-                if re.match(r'/vicep([a-z]|[a-h][a-z]|i[a-v])$', part):
-                    self._purge_volumes(part)
+        remove_files("/usr/afs/bin/")
+        remove_files("/usr/afs/lib/")
+        remove_file("/etc/init.d/openafs-server")
 
     def _remove_client(self):
-        uname = os.uname()[0]
+        """Remove the client binaries."""
         if is_running('afsd'):
             raise AssertionError("Refusing to remove: afsd is running.")
         if is_loaded('libafs'):
             raise AssertionError("Refusing to remove: libafs is loaded.")
         # is /afs mounted?
-        self._remove_files("/usr/vice/etc/")
-        self._remove_files("/usr/afsws/")
-        self._remove_file("/etc/init.d/openafs-client")
-        self._remove_file("/etc/sysconfig/afs")
-        if uname == "SunOS":
-            self._remove_file(_solaris_afs_driver())
-        if self.purge:
-            self._purge_cache()
+        remove_files("/usr/vice/etc/")
+        remove_files("/usr/afsws/")
+        remove_file("/etc/init.d/openafs-client")
+        remove_file("/etc/sysconfig/afs")
+        self.client_setup.remove_driver()
 
-    def remove(self, components=None):
-        components = _check_component_names(components)
-        # Always remove the client server first.
-        if 'client' in components:
+    def install(self):
+        """Install Transarc-style distribution OpenAFS binaries.
+
+        self.bins specifies the bins to be installed.
+        * None: Install the bins under <sysname>/dest in the current directory.
+        * a directory path:  Install the bins found in the given dest directory.
+        * a path to a tarball: Untar the tarball in a temporary directory and
+          install the bins found under <sysname>/dest.
+        * url path: Download the tarball file at the given url, untar the tarball,
+          and install the bins found under <sysname>/dest.
+        """
+        def _untar(tarball):
+            self.tmpdir = tempfile.mkdtemp()
+            logger.info("Untarring %s into %s", self.bins, self.tmpdir)
+            untar(tarball, chdir=self.tmpdir)
+            return glob.glob("%s/*/dest" % (self.tmpdir))[0] # must have a dest dir.
+
+        def _download(url):
+            BLOCK_SIZE = 4 * 1024
+            rsp = urllib2.urlopen(url)
+            (fh, self.tmpfile) = tempfile.mkstemp(suffix='.tar.gz')
+            logger.info("Downloading %s to %s", url, self.tmpfile)
+            with open(self.tmpfile, 'wb') as tarball:
+                block = rsp.read(BLOCK_SIZE)
+                while block:
+                    tarball.write(block)
+                    block = rsp.read(BLOCK_SIZE)
+            os.close(fh)
+            return self.tmpfile
+
+        if self.bins is None:
+            self.dest = self._detect_dest()
+        elif os.path.isdir(self.bins):
+            self.dest = self.bins
+        elif (self.bins.startswith('http://') or self.bins.startswith('https://')) and self.bins.endswith('.tar.gz'):
+            self.dest = _untar(_download(self.bins))
+        elif os.path.isfile(self.bins) and self.bins.endswith('.tar.gz'):
+            self.dest = _untar(self.bins)
+        else:
+            raise AssertionError("Unrecognized path to installation files: %s" % (self.bins))
+        self._check_dest(self.dest)
+        self.pre_install()
+        if self.do_server:
+            self._install_server()
+        if self.do_client:
+            self._install_client()
+        self.post_install()
+        if self.tmpfile:
+            logger.info("Removing tmp file %s", self.tmpfile)
+            os.remove(self.tmpfile)
+        if self.tmpdir:
+            logger.info("Removing tmp dir %s", self.tmpdir)
+            shutil.rmtree(self.tmpdir)
+
+    def remove(self):
+        """Remove Transarc-style distribution OpenAFS binaries."""
+        self.pre_remove()
+        if self.do_client:
             self._remove_client()
-        if 'server' in components:
+        if self.do_server:
             self._remove_server()
+        self.post_remove()
+
+#
+# Test Driver
+#
+class _Test(object):
+    def __init__(self, dest):
+        self.dest = dest
+
+    def test_install(self):
+        i = TransarcInstaller(dest=self.dest, force=True)
+        i.install()
+
+    def test_remove(self):
+        i = TransarcInstaller(dest=self.dest, purge=True)
+        i.remove()
+
+    def test_install_server(self):
+        i = TransarcInstaller(dest=self.dest, force=True, components=['server'])
+        i.install()
+
+    def test_remove_server(self):
+        i = TransarcInstaller(dest=self.dest, force=True, components=['server'])
+        i.remove()
+
+    def test_install_client(self):
+        i = TransarcInstaller(dest=self.dest, force=True, components=['client'])
+        i.install()
+
+    def test_remove_client(self):
+        i = TransarcInstaller(dest=self.dest, force=True, components=['client'])
+        i.remove()
+
+    def test(self):
+        logging.basicConfig(level=logging.DEBUG)
+        self.test_remove()
+        self.test_install_server()
+        self.test_install_client()
+        self.test_remove_server() # leaves common packages
+        self.test_remove_client() # removes common packages
+
+def main():
+    if len(sys.argv) != 2:
+        sys.stderr.write("usage: python transarc.py <dest>\n")
+        sys.exit(1)
+    if os.geteuid() != 0:
+        sys.stderr.write("Must run as root!\n")
+        sys.exit(1)
+    t = _Test(sys.argv[1])
+    t.test()
+
+if __name__ == '__main__':
+    main()
 

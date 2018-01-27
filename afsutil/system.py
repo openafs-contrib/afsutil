@@ -23,15 +23,47 @@
 import logging
 import os
 import re
+import socket
 import subprocess
+import sys
 import time
 
 logger = logging.getLogger(__name__)
 
+class RingBuffer:
+    """Circular array for appending."""
+    # Adapted from the python cookbook.
+    def __init__(self, size_max):
+        self.size_max = size_max
+        self.data = []
+
+    class __FullBuffer:
+        def append(self, x):
+            """Append an element overwriting the oldest one."""
+            self.data[self.cursor] = x
+            self.cursor = (self.cursor + 1) % self.size_max
+
+        def get(self):
+            """Return list of elements in correct order."""
+            return self.data[self.cursor:] + self.data[:self.cursor]
+
+    def append(self,x):
+        """Append an element at the end of the buffer."""
+        self.data.append(x)
+        if len(self.data) == self.size_max:
+            # We are full; switch to the circular functions.
+            self.cursor = 0
+            self.__class__ = self.__FullBuffer
+
+    def get(self):
+        """ Return a list of elements from the oldest to the newest. """
+        return self.data
+
+
 class CommandFailed(Exception):
     """Command exited with a non-zero exit code."""
-    def __init__(self, cmd, args, code, out, err):
-        self.cmd = cmd
+    def __init__(self, args, code, out, err):
+        self.cmd = subprocess.list2cmdline(args)
         self.args = args
         self.code = code
         self.out = out
@@ -39,7 +71,7 @@ class CommandFailed(Exception):
 
     def __str__(self):
         msg = "Command failed! %s; code=%d, stderr='%s'" % \
-              (" ".join(self.args), self.code, self.err.strip())
+              (self.cmd, self.code, self.err.strip())
         return repr(msg)
 
 def run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
@@ -51,6 +83,7 @@ def run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
         args = []
     else:
         args = list(args)
+    cmd = which(cmd, raise_errors=True)
     args.insert(0, cmd)
     for attempt in xrange(0, (retry + 1)):
         if attempt > 0:
@@ -59,7 +92,7 @@ def run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
             time.sleep(wait)
             if cleanup:
                 cleanup()  # Try to cleanup the mess from the last failure.
-        logger.debug("Running: %s", subprocess.list2cmdline(args))
+        logger.debug("running: %s", subprocess.list2cmdline(args))
         proc = subprocess.Popen(
                    args,
                    executable=cmd,
@@ -69,10 +102,49 @@ def run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
                    stderr=subprocess.PIPE)
         output,error = proc.communicate()
         rc = proc.returncode
-        logger.debug("Result of %s; rc=%d, output=%s, error=%s", cmd, rc, output, error)
+        logger.debug("result of %s; rc=%d", cmd, rc)
+        if output:
+            logger.debug("<stdout>")
+            logger.debug(output)
+            logger.debug("</stdout>")
+        if error:
+            logger.debug("<stderr>")
+            logger.debug(error)
+            logger.debug("</stderr>")
         if rc == 0:
             return output
-    raise CommandFailed(cmd, args, rc, output, error);
+    raise CommandFailed(args, rc, output, error);
+
+def sh(*args, **kwargs):
+    """Run the command line and write the output to the logger."""
+    args = list(args)
+    output = kwargs.get('output', False)
+    quiet = kwargs.get('quiet', False)
+    prefix = kwargs.get('prefix', '')
+    if prefix:
+        prefix = "%s: " % (prefix)
+    args[0] = which(args[0], raise_errors=True)
+    args = [arg.__str__() for arg in args]  # subprocess expects string args.
+    output_lines = []
+    tail = RingBuffer(20)  # Save the last few lines for error reporting.
+
+    # Redirect stderr to the same pipe to capture errors too.
+    if not quiet:
+        cmdline = subprocess.list2cmdline(args)
+        logger.info("running %s", cmdline)
+    p = subprocess.Popen(args, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    with p.stdout:
+        for line in iter(p.stdout.readline, ''):
+            line = line.rstrip("\n")
+            tail.append(line)
+            if not quiet:
+                logger.info("%s%s", prefix, line)
+            if output:
+                output_lines.append(line)
+    code = p.wait()
+    if code != 0:
+        raise CommandFailed(args, code, "", "\n".join(tail.get()))
+    return output_lines
 
 def which(program, extra_paths=None, raise_errors=False):
     """Find a program in the PATH."""
@@ -94,7 +166,7 @@ def which(program, extra_paths=None, raise_errors=False):
             if os.path.isfile(fpath) and os.access(fpath, os.X_OK):
                 return fpath
         if raise_errors:
-            raise AssertionError("Could not find '%s' in paths %s" % (program, ",".join(paths)))
+            raise AssertionError("Could not find '%s' in paths %s" % (program, ":".join(paths)))
     return None
 
 def file_should_exist(path, description=None):
@@ -121,14 +193,21 @@ def directory_should_not_exist(path, description=None):
         raise AssertionError(description)
     return True
 
+def path_join(a, *p):
+    # os.path.join() is brain dead.
+    p = [x.lstrip('/') for x in p]
+    return os.path.join(a, *p)
+
 def get_running():
     """Get a set of running processes."""
-    ps = which("ps")
-    out = run(ps, args=["ax"])
-    lines = out.splitlines()
-    # The first line of the `ps ax' output is a header line which is
+    if os.uname()[0] == 'SunOS':
+        ps = which('/usr/bin/ps') # avoid the old BSD variant
+    else:
+        ps = which('ps')
+    lines = sh(ps, '-e', '-f', output=True, quiet=True)
+    # The first line of the `ps' output is a header line which is
     # used to find the data field columns.
-    column = lines[0].index('COMMAND')
+    column = lines[0].index('CMD')
     procs = set()
     for line in lines[1:]:
         cmd_line = line[column:]
@@ -157,6 +236,23 @@ def afs_mountpoint():
     else:
         mountpoint = None
     return mountpoint
+
+def is_afs_mounted():
+    """Returns true if afs is mounted."""
+    return afs_mountpoint() is not None
+
+def afs_umount():
+    """Attempt to unmount afs, if mounted."""
+    afs = afs_mountpoint()
+    if afs:
+        run('umount', args=[afs])
+
+def nproc():
+    """Return the number of processing units."""
+    nproc = which('nproc')
+    if nproc is None:
+        return 1  # default
+    return int(sh('nproc', output=True)[0])
 
 def _linux_network_interfaces():
     """Return list of non-loopback network interfaces."""
@@ -204,6 +300,21 @@ def _linux_unload_module():
     kmods = re.findall(r'^(libafs|openafs)\s', output, re.M)
     for kmod in kmods:
         run('rmmod', args=[kmod])
+
+def _linux_load_module(kmod):
+    run('insmod', args=[kmod])
+
+def _solaris_network_interfaces_old():
+    """Return a list of non-loopback networks interfaces."""
+    addrs = []
+    lines = sh('/usr/sbin/ifconfig', '-a', output=True, quiet=True)
+    for line in lines:
+        match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', line)
+        if match:
+            addr = match.group(1)
+            if not addr.startswith("127."):
+                addrs.append(addr)
+    return addrs
 
 def _solaris_network_interfaces():
     """Return list of non-loopback network interfaces."""
@@ -261,6 +372,22 @@ def symlink(src, dst):
         os.remove(dst)
     os.symlink(src, dst)
 
+def tar(tarball, source_path):
+    tar = 'gtar' if os.uname()[0] == "SunOS" else 'tar'
+    sh(tar, 'czf', tarball, source_path, quiet=True)
+
+def untar(tarball, chdir=None):
+    savedir = None
+    if chdir:
+        savedir = os.getcwd()
+        os.chdir(chdir)
+    tar = 'gtar' if os.uname()[0] == "SunOS" else 'tar'
+    try:
+        sh(tar, 'xzf', tarball, quiet=True)
+    finally:
+        if savedir:
+            os.chdir(savedir)
+
 def _so_symlinks(path):
     """Create shared lib symlinks."""
     if not os.path.isdir(path):
@@ -281,23 +408,71 @@ def _solaris_configure_dynamic_linker(path):
         raise AssertionError("Failed to configure dynamic linker: path %s not found." % (path))
     _so_symlinks(path)
     run("/usr/bin/crle", args=["-u", "-l", path])
+    run("/usr/bin/crle", args=["-64", "-u", "-l", path])
 
 def _solaris_unload_module():
     module_id = _solaris_is_loaded('afs')
     if module_id != 0:
         run('modunload', args=["-i", module_id])
 
+def _solaris_load_module(kmod):
+    # Adpapted from the solaris openafs-client init script.
+    afs = '/kernel/drv/amd64/afs' # modern path
+    sh('cp', kmod, afs)
+    logger.info("Loading AFS kernel extensions.")
+    sh('modload', afs)
+
+def check_hosts_file():
+    """Check for loopback addresses in the /etc/hosts file.
+
+    Modern linux distros assign a loopback address to the hostname. While not
+    strictly incorrect, this can confuse OpenAFS which gets our IP address from
+    gethostbyname()."""
+    result = True
+    nr = 0
+    hostname = socket.gethostname()
+    with open('/etc/hosts', 'r') as f:
+        for line in f.readlines():
+            nr += 1
+            if line.startswith('127.'):
+                if hostname in line.split()[1:]:
+                    sys.stderr.write(
+                        "Warning: loopback address '%s' assigned to our hostname '%s' on line %d of /etc/hosts.\n" % \
+                        (line.split()[0], hostname, nr))
+                    result = False
+    return result
+
+def check_host_address():
+    """Verify our hostname resolves to a useable address."""
+    hostname = socket.gethostname()
+    ip = socket.gethostbyname(hostname)
+    ips = network_interfaces()
+    if len(ips) == 0:
+        sys.stderr.write("Warning: Unable to detect any non-loopback network interfaces.\n")
+        return False
+    if not ip in ips:
+        sys.stderr.write("Warning: hostname '%s' resolves to '%s', not found in network interfaces: '%s'.\n" % \
+                         (hostname, ip, " ".join(ips)))
+        return False
+    return True
+
 _uname = os.uname()[0]
+_osrel = os.uname()[2]
 if _uname == "Linux":
     network_interfaces = _linux_network_interfaces
     is_loaded = _linux_is_loaded
     configure_dynamic_linker = _linux_configure_dynamic_linker
     unload_module = _linux_unload_module
+    load_module = _linux_load_module
 elif _uname == "SunOS":
-    network_interfaces = _solaris_network_interfaces
+    if _osrel == "5.10":
+        network_interfaces = _solaris_network_interfaces_old
+    else:
+        network_interfaces = _solaris_network_interfaces
     is_loaded = _solaris_is_loaded
     configure_dynamic_linker = _solaris_configure_dynamic_linker
     unload_module = _solaris_unload_module
+    load_module = _solaris_load_module
 else:
     raise AssertionError("Unsupported operating system: %s" % (uname))
 

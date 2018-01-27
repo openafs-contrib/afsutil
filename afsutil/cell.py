@@ -30,7 +30,6 @@ import os
 import re
 import socket
 import sys
-import subprocess
 
 from afsutil.cli import bos, vos, pts, fs, udebug, rxdebug
 from afsutil.system import CommandFailed, afs_mountpoint
@@ -49,25 +48,19 @@ PORT = {
 
 def _optfsbnode(options):
     """Helper to get the fs bnode type."""
-    dafs = True  # dafs by default.
-    if 'dafs' in options:
-        if options['dafs'] == "no" or options['dafs'] == "false":
-            dafs = False
-    if dafs:
-        bnode = 'dafs'
-    else:
+    dafs = options.get('dafs', 'yes').strip() # dafs by default.
+    if dafs == 'no' or dafs == 'false' or dafs == '0':
         bnode = 'fs'
+    else:
+        bnode = 'dafs'
     return bnode
 
 def _optcmdstring(options, program):
     """Helper to get the server cmd line string for bos create."""
     # Use the canonical path, bosserver will convert to the actual path.
     cmd = os.path.join(AFS_SRV_LIBEXEC_DIR, program)
-    if program in options:
-        opts = options[program].strip()
-        if opts:
-            cmd += " " + opts
-    return cmd
+    opts = options.get(program, '').strip()
+    return ' '.join(filter(None, [cmd, opts]))
 
 class Host(object):
     """Helper to configure an OpenAFS server using the bos command."""
@@ -324,13 +317,13 @@ class Cell(object):
         self.options = optlists2dict(options)
 
         # Defaults.
-        localhost = socket.gethostname()
+        hostname = socket.gethostname()
         if admins is None: admins = ['admin']
-        if db is None: db = [localhost]
-        if fs is None: fs = [localhost]
+        if db is None: db = [hostname]
+        if fs is None: fs = [hostname]
         # In case 'localhost' is given as a hostname, convert to the real name.
-        db = [localhost if x=='localhost' else x for x in db]
-        fs = [localhost if x=='localhost' else x for x in fs]
+        db = [hostname if x=='localhost' else x for x in db]
+        fs = [hostname if x=='localhost' else x for x in fs]
 
         # Cell name.
         self.cell = cell
@@ -424,9 +417,9 @@ class Cell(object):
                     pass
             return _unlock
         vos('addsite', '-server', server, '-partition', partition, '-id', name,
-            retry=20, wait=15, cleanup=_unlocker(name))
+            retry=20, wait=80, cleanup=_unlocker(name))
         vos('release', '-id', name,
-            retry=20, wait=15, cleanup=_unlocker(name))
+            retry=20, wait=80, cleanup=_unlocker(name))
 
     def ping_hosts(self):
         """Verify hosts are reachable and bosserver is running."""
@@ -448,8 +441,6 @@ class Cell(object):
         # be created and quorum established.
         self.primary_db.setcellname(self.cell)
         self.primary_db.setcellhosts([self.primary_db])
-        for admin in self.admins:
-            self.primary_db.adduser(admin)
         for dbname in DBNAMES:
             self.primary_db.create_database(dbname, self.options)
             self.primary_db.wait_for_status(dbname, target='running')
@@ -492,6 +483,8 @@ class Cell(object):
             self.primary_db.wait_for_status(dbname, target='running')
             for host in self.db:
                 if host != self.primary_db:
+                    for admin in self.admins:
+		        host.adduser(admin)
                     host.create_database(dbname, self.options)
                     host.wait_for_status(dbname, target='running')
 
@@ -552,49 +545,78 @@ class Cell(object):
         bnode = _optfsbnode(self.options)
         host.create_fileserver(bnode, self.options)
 
-    def mount_root_volumes(self):
-        """Mount and replicate the cell root volumes.
+    def mount_root_volumes(self, dynroot):
+        """Mount, setup acls, and replicate the root.afs and root.cell volumes.
 
-        Should be called after running newcell(), and then starting
-        the client. Requires an admin token."""
+        dynroot: True if the cache manager was started with -dynroot or -dynroot-sparse.
 
+        Note: It would be nice if dynroot mode could be could be detected, but the OpenAFS
+              cache manager does not provide a way to do so at this time.
+
+        Preconditions:
+        1. The root.afs and root.cell volumes must exist.
+        2. The cache manager must be running, with or without -dynroot.
+        3. An token with admin privileges has been acquired.
+
+        Post-conditions:
+        1. The root.afs.readonly and root.cell.readonly volumes exist.
+        2. The path /afs/<cellname> resolves to the root.cell.readonly root vnode.
+        3. The path /afs/.<cellname> resolves to the root.cell root vnode.
+        4. The path /afs/.<cellname>/.afs resolves to the root.afs root vnode.
+
+        If the cache manager is currently running in dynroot mode, the special
+        /afs/.<cellname>/.afs mount point is created first, in order to
+        reach the root.afs vnode to add cell mount points.
+
+        If the cache manager is not currently running in dynroot mode, the
+        special /afs/.<cellname>/.afs mount point is created first anyway
+        in case it is needed later when dynroot is turned on, on this client or
+        others.
+
+        Note: In the past, this function attempted to create the cellular mount
+        point using the magic '.:mount' path when the cache manager was running
+        in dynroot mode.  However we found this did not work on Solaris unless
+        the -fakestat option was also given. This is arguably an OpenAFS bug.
+        """
+        # First, verify AFS is mounted and find the mount point to it, e.g., /afs
         afs = afs_mountpoint()
         if afs is None:
             raise AssertionError("Unable to mount volumes; afs is not mounted!")
-        dynmount = os.path.join(afs, '.:mount')
+
+        # Verify the cache manager's cell matches the name of the cell
+        # being setup. This mismatch can happen if the cache manager's ThisCell
+        # and/or CellServDB files were not created correctly before the cache
+        # was started.
         cell = self._wscell()
         if cell != self.cell:
             raise AssertionError("Client side ThisCell file does not match the cell name!")
 
-        logger.info("Mounting top level volumes.")
-        # Mount the cell's root.cell volume with the root directory of root.afs
-        # which is needed for clients not running in dynroot mode. Use the
-        # special path by volume name feature to access the root.afs root
-        # directory if this cache manager is running in dynroot mode.
-        if os.path.exists(dynmount):
-            root_afs = os.path.join(dynmount, '%s:root.afs' % (cell))
+        def _mount(path, volume, *opts):
+            if not os.path.exists(path):
+                msg = ' as read-write' if '-rw' in opts else ''
+                logger.info("Mounting '%s' on path '%s'%s.", volume, path, msg)
+                fs('mkmount', '-dir', path, '-vol', volume, *opts)
+
+        if not dynroot:
+            _mount("%(afs)s/%(cell)s" % locals(), 'root.cell', '-cell', cell)
+            _mount("%(afs)s/.%(cell)s" % locals(), 'root.cell', '-cell', cell, '-rw')
+            _mount("%(afs)s/.%(cell)s/.afs" % locals(), 'root.afs', '-rw') # for dynroot clients
         else:
-            root_afs = afs
-        self._mount(root_afs, cell, 'root.cell')
+            _mount("%(afs)s/.%(cell)s/.afs" % locals(), 'root.afs', '-rw')
+            _mount("%(afs)s/.%(cell)s/.afs/%(cell)s" % locals(), 'root.cell', '-cell', cell)
+            _mount("%(afs)s/.%(cell)s/.afs/.%(cell)s" % locals(), 'root.cell', '-cell', cell, '-rw')
 
-        # Mount the root.afs under a special hidden directory to make a
-        # read-write path available for any changes in the future.
-        root_cell = os.path.join(afs, cell)
-        root_cell_rw = os.path.join(afs, ".%s" % cell)
-        root_afs_rw = os.path.join(root_cell_rw, '.root.afs')
-        if not os.path.exists(root_afs_rw):
-            fs('mkmount', '-dir', root_afs_rw, '-vol', 'root.afs')
+        # Grant global read and list rights to the root /afs and /afs/<cell> paths.
+        if not dynroot:
+            fs('setacl', '-dir', "%(afs)s" % locals(), '-acl', 'system:anyuser', 'read')
+            fs('setacl', '-dir', "%(afs)s/.%(cell)s" % locals(), '-acl', 'system:anyuser', 'read')
+        else:
+            fs('setacl', '-dir', "%(afs)s/.%(cell)s/.afs" % locals(), '-acl', 'system:anyuser', 'read')
+            fs('setacl', '-dir', "%(afs)s/.%(cell)s" % locals(), '-acl', 'system:anyuser', 'read')
 
-        # Grant world readable access to the top level root directories.  Use
-        # the read-write paths in case the volumes have already been released
-        # (i.e. this function was already called.)
-        for path in (root_afs_rw, root_cell_rw):
-            fs('setacl', '-dir', path, '-acl', 'system:anyuser', 'read')
-
-        # Add the read-only clones and release the volumes.
-        logger.info("Releasing top level volumes.")
-        for volume in ('root.afs', 'root.cell'):
-            self._create_replica(volume)
+        # Replicate our root volumes.
+        self._create_replica('root.afs')
+        self._create_replica('root.cell')
         fs('checkvolumes')
 
     def create_top_volumes(self, volumes):
