@@ -84,7 +84,8 @@ def writefile(path, contents):
 
 class RpmBuilder(object):
     def __init__(self, srcdir=None, pkgdir=None, topdir=None, dstdir=None,
-                 version=None, arch=None, spec=None, csdb=None, clobber=False, quiet=False,
+                 version=None, arch=None, spec=None, csdb=None, clobber=False,
+                 quiet=False, verbose=False,
                  with_=None, without=None, **kwargs):
         """Initialize the RpmBuilder object
 
@@ -97,6 +98,7 @@ class RpmBuilder(object):
         spec:    custom rpmbuild specfile (default: {pkdir}/openafs.spec.in}
         clobber: build and overwrite existing kmod-openafs rpms
         quiet:   less output
+        verbose: more output
         with_:   rpmbuild --with options
         without: rpmbuild --without options
         """
@@ -120,6 +122,7 @@ class RpmBuilder(object):
         # options
         self.clobber = clobber
         self.quiet = quiet
+        self.verbose = verbose
         self.custom_spec = spec
         self.custom_csdb = csdb
         self.with_ = flatten(with_)
@@ -659,10 +662,10 @@ class RpmBuilder(object):
     def banner(self, lines):
         """Print a banner."""
         if not self.quiet:
-            bar = "=" * 80 + "\n"
+            bar = "*" * 72 + "\n"
             sys.stdout.write(bar)
             for line in flatten(lines):
-                sys.stdout.write("=  {0}\n".format(line))
+                sys.stdout.write("*  {0}\n".format(line))
             sys.stdout.write(bar)
 
     def summary(self):
@@ -690,6 +693,9 @@ class MockRpmBuilder(RpmBuilder):
         RpmBuilder.__init__(self, **kwargs)
 
     def mock(self, *args, **kwargs):
+        args = list(args)
+        if self.verbose:
+            args.append('--verbose')
         return sh('mock', '--root', self.chroot, *args, **kwargs)
 
     def init_chroot(self):
@@ -767,12 +773,15 @@ class MockRpmBuilder(RpmBuilder):
             *args,
             output=False)
         if self.dstdir:
-            mkdirp(self.dstdir)
-            for rpm in glob.glob("{resultdir}/*.rpm".format(resultdir=resultdir)):
-                dst = "{dstdir}/{rpm}".format(dstdir=self.dstdir, rpm=os.path.basename(rpm))
-                self.built.append(dst)
-                shutil.copy(rpm, dst)
-                logger.info("Wrote: {dst}".format(dst=dst))
+            dstdir = self.dstdir
+        else:
+            dstdir = "{topdir}/RPMS/{arch}".format(topdir=self.topdir, arch=self.arch)
+        mkdirp(dstdir)
+        for rpm in glob.glob("{resultdir}/*.rpm".format(resultdir=resultdir)):
+            dst = "{dstdir}/{rpm}".format(dstdir=dstdir, rpm=os.path.basename(rpm))
+            self.built.append(dst)
+            shutil.copy(rpm, dst)
+            logger.info("Wrote: {dst}".format(dst=dst))
 
     def build_kmod(self, srpm=None, kversion=None):
         """Build the a kmod rpm for the given kernel version.
@@ -812,14 +821,15 @@ class MockRpmBuilder(RpmBuilder):
             *args,
             output=False)
         if self.dstdir:
-            mkdirp(self.dstdir)
-            for rpm in glob.glob("{resultdir}/*.rpm".format(resultdir=resultdir)):
-                if rpm.endswith(".src.rpm"):
-                    continue
-                dst = "{dstdir}/{rpm}".format(dstdir=self.dstdir, rpm=os.path.basename(rpm))
-                self.built.append(dst)
-                shutil.copy(rpm, dst)
-                logger.info("Wrote: {dst}".format(dst=dst))
+            dstdir = self.dstdir
+        else:
+            dstdir = "{topdir}/RPMS/{arch}".format(topdir=self.topdir, arch=self.arch)
+        mkdirp(dstdir)
+        for rpm in glob.glob("{resultdir}/*.rpm".format(resultdir=resultdir)):
+            dst = "{dstdir}/{rpm}".format(dstdir=dstdir, rpm=os.path.basename(rpm))
+            self.built.append(dst)
+            shutil.copy(rpm, dst)
+            logger.info("Wrote: {dst}".format(dst=dst))
 
 def package(**kwargs):
     """Build OpenAFS rpms.
@@ -849,7 +859,10 @@ def package(**kwargs):
     # Note: It could be possible no kmods need to be built, in which case it it
     # not neccessary to build the srpm. So we defer prepare_sources until we
     # know it is needed.
-    if build == 'srpm':
+    if build == 'sources':
+        b.prepare_spec()
+        b.prepare_sources()
+    elif build == 'srpm':
         b.build_srpm()
     elif build == 'userspace':
         b.build_userspace()

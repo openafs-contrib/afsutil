@@ -92,7 +92,7 @@ def reload(**args):
     argument('--clobber', help='rebuild and overwrite existing kmods (--mock only)',
                            action='store_true'),
     argument('--no-clean', help='do not clean after build (--mock only)', dest='autoclean', action='store_false'),
-    argument('--build', help='what to build: all, srpm, userspace, kmods', metavar='<target>', default='all',
+    argument('--build', help='what to build: all, sources, srpm, userspace, kmods', metavar='<target>', default='all',
                         choices=['all','srpm','userspace','kmods']),
     argument('--csdb', help='CellServDB file path (default: download)', metavar='<csdb>'),
     argument('--spec', help='spec file path', metavar='<spec>'),
