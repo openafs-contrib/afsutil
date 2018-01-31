@@ -235,7 +235,7 @@ class RpmBuilder(object):
         return (linux_pkgver, linux_pkgrel)
 
     def current_kversion(self):
-        """Return the verision of the running kernel."""
+        """Return the version of the running kernel."""
         version = os.uname()[2]
         arch = os.uname()[4]
         return trim(version, '.'+arch)
@@ -613,6 +613,8 @@ class RpmBuilder(object):
 
         if kversion is None:
             kversion = self.current_kversion()
+        else:
+            kversion = trim(kversion, '.'+self.arch)
 
         info = ["Building module for {kversion}".format(kversion=kversion)]
         if self.count and self.total:
@@ -800,6 +802,8 @@ class MockRpmBuilder(RpmBuilder):
             srpm = self.srpm
         if kversion is None:
             kversion = self.current_kversion()
+        else:
+            kversion = trim(kversion, '.'+self.arch)
 
         info = ["Building module for {kversion}".format(kversion=kversion)]
         if self.count and self.total:

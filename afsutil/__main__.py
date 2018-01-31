@@ -98,7 +98,7 @@ def reload(**args):
     argument('--spec', help='spec file path', metavar='<spec>'),
     argument('--version', help='target version number'),
     argument('--arch', help='target architecture, e.g. x86_64', metavar='<arch>'),
-    argument('--kversion', help='linux kernel versions; may be given more than once',
+    argument('--kversion', help='linux kernel versions (default: check)',
                            metavar='<kernel-version>', dest='kversions',
                            nargs='+', action='append', default=[]),
     argument('--with', help='build with optional feature (e.g. --with kauth)',
