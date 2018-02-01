@@ -92,7 +92,7 @@ class RpmBuilder(object):
         srcdir:  path of the checked out source tree (default: .)
         pkgdir:  path of the packaging files (default: {srcdir}/src/packaging/RedHat
         topdir:  path of the rpmbuild directories (default: {srcdir}/packaging/rpmbuild)
-        dstdir:  path to place rpms (default: None)
+        dstdir:  path to place rpms (default: {topdir}/RPMS/{arch})
         version: target version number (default: check)
         arch:    target architecture (default: check)
         spec:    custom rpmbuild specfile (default: {pkdir}/openafs.spec.in}
@@ -114,11 +114,13 @@ class RpmBuilder(object):
             with_ = []
         if without is None:
             without = []
+        if dstdir is None:
+            dstdir = os.path.join(topdir, "RPMS", arch)
         # paths
         self.srcdir = srcdir
         self.pkgdir = pkgdir
         self.topdir = topdir
-        self.dstdir = dstdir # may be None
+        self.dstdir = dstdir
         # options
         self.clobber = clobber
         self.quiet = quiet
@@ -739,15 +741,7 @@ class MockRpmBuilder(RpmBuilder):
         if len(rpms) < 1:
             raise RpmBuilderError("Failed to get srpm name.")
         src = rpms[0]
-        v = dict(
-            topdir=self.topdir,
-            dstdir=self.dstdir,
-            rpm=os.path.basename(src),
-        )
-        if self.dstdir:
-            dst = "{dstdir}/{rpm}".format(**v)
-        else:
-            dst = "{topdir}/SRPMS/{rpm}".format(**v)
+        dst = os.path.join(self.topdir, "SRPMS", os.path.basename(src))
         mkdirp(os.path.dirname(dst))
         shutil.copy(src, dst)
         self.srpm = dst
@@ -774,13 +768,9 @@ class MockRpmBuilder(RpmBuilder):
             '--define', 'build_modules 0',
             *args,
             output=False)
-        if self.dstdir:
-            dstdir = self.dstdir
-        else:
-            dstdir = "{topdir}/RPMS/{arch}".format(topdir=self.topdir, arch=self.arch)
-        mkdirp(dstdir)
         for rpm in glob.glob("{resultdir}/*.rpm".format(resultdir=resultdir)):
-            dst = "{dstdir}/{rpm}".format(dstdir=dstdir, rpm=os.path.basename(rpm))
+            mkdirp(self.dstdir)
+            dst = "{dstdir}/{rpm}".format(dstdir=self.dstdir, rpm=os.path.basename(rpm))
             self.built.append(dst)
             shutil.copy(rpm, dst)
             logger.info("Wrote: {dst}".format(dst=dst))
@@ -824,13 +814,9 @@ class MockRpmBuilder(RpmBuilder):
             '--define', 'build_modules 1',
             *args,
             output=False)
-        if self.dstdir:
-            dstdir = self.dstdir
-        else:
-            dstdir = "{topdir}/RPMS/{arch}".format(topdir=self.topdir, arch=self.arch)
-        mkdirp(dstdir)
         for rpm in glob.glob("{resultdir}/*.rpm".format(resultdir=resultdir)):
-            dst = "{dstdir}/{rpm}".format(dstdir=dstdir, rpm=os.path.basename(rpm))
+            mkdirp(self.dstdir)
+            dst = "{dstdir}/{rpm}".format(dstdir=self.dstdir, rpm=os.path.basename(rpm))
             self.built.append(dst)
             shutil.copy(rpm, dst)
             logger.info("Wrote: {dst}".format(dst=dst))
@@ -846,15 +832,15 @@ def package(**kwargs):
     srcdir: path of the checked out source tree (default: .)
     pkgdir: path of the packaging files (default: {srcdir}/src/packaging/RedHat
     topdir: path of the rpmbuild directories (default: {srcdir}/packaging/rpmbuild)
-    dstdir: path to place rpms (default: None)
-    arch: target arch (default: None)
+    dstdir: path to place rpms (default: {topdir}/RPMS/{arch})
+    arch: target arch (default: check)
     clobber: build and overwrite existing kmod-openafs rpms
     quiet:   less output
     """
     chroot = kwargs.pop('chroot', None)
     build = kwargs.pop('build', 'all')
-
     kversions = flatten(kwargs.pop('kversions', None)) # argparse gives a list of lists
+
     if chroot:
         b = MockRpmBuilder(chroot, **kwargs)
     else:
