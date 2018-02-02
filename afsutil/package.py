@@ -64,6 +64,7 @@ import urllib2
 import logging
 import shutil
 import glob
+import pprint
 from afsutil.system import sh, mkdirp, which
 from afsutil.misc import flatten, trim
 
@@ -684,7 +685,7 @@ class RpmBuilder(object):
         self.banner(summary)
 
 class MockRpmBuilder(RpmBuilder):
-    def __init__(self, chroot, autoclean=True, **kwargs):
+    def __init__(self, chroot, autoclean=True, repoid=None, **kwargs):
         """Initialize the MockRpmBuilder object.
 
         chroot: name of the chroot (mock --root)
@@ -692,6 +693,7 @@ class MockRpmBuilder(RpmBuilder):
         if chroot is None:
             raise ValueError("chroot argument is required.")
         self.chroot = chroot
+        self.repoid = repoid # may be None
         self.autoclean = autoclean
         self.inited = False
         RpmBuilder.__init__(self, **kwargs)
@@ -720,8 +722,14 @@ class MockRpmBuilder(RpmBuilder):
         """List the linux kernel versions of the available kernel header packages in the chroot."""
         self.init_chroot()
         self.mock('--install', 'yum-utils', '--quiet', output=False) # for repoquery
-        cmd = "repoquery --show-dupes --queryformat='%{VERSION}-%{RELEASE}' kernel-devel"
-        output = self.mock('--quiet', '--chroot', cmd, quiet=True)
+        cmd = "repoquery --show-dupes --repoid=kversions --queryformat='%{VERSION}-%{RELEASE}' kernel-devel"
+        cmd = ['repoquery']
+        if self.repoid:
+            cmd.append('--repoid={0}'.format(self.repoid))
+        cmd.append('--show-dupes')
+        cmd.append('--queryformat="%{VERSION}-%{RELEASE}"')
+        cmd.append('kernel-devel')
+        output = self.mock('--quiet', '--chroot', ' '.join(cmd), quiet=True)
         logger.debug("kernel versions: {0}".format(" ".join(output)))
         return output
 
@@ -849,6 +857,10 @@ def package(**kwargs):
     # Note: It could be possible no kmods need to be built, in which case it it
     # not neccessary to build the srpm. So we defer prepare_sources until we
     # know it is needed.
+    if kwargs.get('list_kversions'):
+        kversions = b.find_kversions()
+        return
+
     if build == 'sources':
         b.prepare_spec()
         b.prepare_sources()

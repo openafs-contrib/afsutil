@@ -101,6 +101,8 @@ def reload(**args):
     argument('--kversion', help='linux kernel versions (default: check)',
                            metavar='<kernel-version>', dest='kversions',
                            nargs='+', action='append', default=[]),
+    argument('--repoid', help='yum repo containing kernel-header rpms (--mock only)'),
+    argument('--list-kversions', help='list linux kernel versions then exit', action='store_true'),
     argument('--with', help='build with optional feature (e.g. --with kauth)',
                        dest='with_', metavar='<feature>',
                        nargs='+', action='append', default=[]),
