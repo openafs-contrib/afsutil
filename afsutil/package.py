@@ -845,19 +845,21 @@ def package(**kwargs):
     clobber: build and overwrite existing kmod-openafs rpms
     quiet:   less output
     """
+    # Note: It could be possible no kmods need to be built, in which case it it
+    # not neccessary to build the srpm. So we defer prepare_sources until we
+    # know it is needed.
     chroot = kwargs.pop('chroot', None)
     build = kwargs.pop('build', 'all')
     kversions = flatten(kwargs.pop('kversions', None)) # argparse gives a list of lists
+    list_kversions = kwargs.get('list_kversions')
+    dstdir = kwargs.get('dstdir')
 
     if chroot:
         b = MockRpmBuilder(chroot, **kwargs)
     else:
         b = RpmBuilder(**kwargs)
 
-    # Note: It could be possible no kmods need to be built, in which case it it
-    # not neccessary to build the srpm. So we defer prepare_sources until we
-    # know it is needed.
-    if kwargs.get('list_kversions'):
+    if list_kversions:
         kversions = b.find_kversions()
         return
 
@@ -868,11 +870,15 @@ def package(**kwargs):
         b.build_srpm()
     elif build == 'userspace':
         b.build_userspace()
-    elif build == 'kmod' or build == 'kmods':
+        if dstdir:
+            b.createrepo()
+    elif build == 'kmods':
         b.build_kmods(kversions=kversions)
+        if dstdir:
+            b.createrepo()
     else:
         b.build_userspace()
         b.build_kmods(kversions=kversions)
-    b.createrepo()
+        if dstdir:
+            b.createrepo()
     b.summary()
-
