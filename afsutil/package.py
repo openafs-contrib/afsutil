@@ -56,7 +56,7 @@ Example usage:
     b.build_kmods()
 
 """
-
+from __future__ import print_function
 import os
 import sys
 import re
@@ -64,8 +64,7 @@ import urllib2
 import logging
 import shutil
 import glob
-import pprint
-from afsutil.system import sh, mkdirp, which
+from afsutil.system import sh, mkdirp, which, CommandFailed
 from afsutil.misc import flatten, trim
 
 logger = logging.getLogger(__name__)
@@ -137,11 +136,10 @@ class RpmBuilder(object):
         self.csdb = None
         self.sources = {}
         self.srpm = None
-        self.count = 0
-        self.total = 0
         self.downloaded = []
         self.generated = []
         self.skipped = []
+        self.failed = []
         self.built = []
 
     def withargs(self):
@@ -243,7 +241,7 @@ class RpmBuilder(object):
         arch = os.uname()[4]
         return trim(version, '.'+arch)
 
-    def find_kversions_available(self):
+    def find_kversions(self):
         """Find the linux kernel versions of the kernel-devel packages."""
         kversions = sh(
             'rpm', '-q', '-a',
@@ -252,7 +250,7 @@ class RpmBuilder(object):
         logger.debug("Found kernel versions: {0}".format(", ".join(kversions)))
         return kversions
 
-    def find_kversions_existing(self):
+    def find_kmods(self):
         """Find the linux kernel versions of the kmod rpms previously built.
 
         Find the linux kernel versions of the kmods which have been already
@@ -278,24 +276,6 @@ class RpmBuilder(object):
             "{dstdir}/kmod-openafs*.rpm".format(dstdir=self.dstdir),
             sed=get_kversion)
         logger.debug("Found kmods: {0}".format(", ".join(kversions)))
-        return kversions
-
-    def find_kversions(self):
-        logger.debug("clobber is {0}".format(self.clobber))
-        available = self.find_kversions_available()
-        if self.clobber:
-            kversions = available
-        else:
-            # Remove the ones we have already done, if any.
-            existing = self.find_kversions_existing()
-            kversions = list(set(available).difference(set(existing)))
-            skipping = list(set(available).intersection(set(existing)))
-            self.banner([
-                "Available linux kernel versions:", available,
-                "Found kmods for versions:", existing,
-                "Skipping kmod builds for versions:", skipping,
-                "Building kmods for versions:", kversions,
-            ])
         return kversions
 
     def generate_spec(self, src):
@@ -620,8 +600,6 @@ class RpmBuilder(object):
             kversion = trim(kversion, '.'+self.arch)
 
         info = ["Building module for {kversion}".format(kversion=kversion)]
-        if self.count and self.total:
-            info.append("Number {count} of {total}.".format(count=self.count, total=self.total))
         self.banner(info)
 
         logger.info("Building kmod for linux version {0}.".format(kversion))
@@ -649,11 +627,18 @@ class RpmBuilder(object):
         """
         if not kversions:
             kversions = self.find_kversions()
-        self.banner(["Building modules for versions:", kversions])
-        self.total = len(kversions)
-        for i,kversion in enumerate(kversions):
-            self.count = i + 1
-            self.build_kmod(srpm=srpm, kversion=kversion)
+        kmods = self.find_kmods()  # previously built
+        for kversion in kversions:
+            if kversion in kmods:
+                logger.info('Skipping already built kmod for version %s', kversion)
+                self.skipped.append(kversion)
+                continue
+            try:
+                self.build_kmod(srpm=srpm, kversion=kversion)
+            except CommandFailed as fail:
+                self.failed.append(kversion)
+                logger.warning("Failed to build kmod for version {0}".format(kversion))
+                logger.exception(fail)
 
     def createrepo(self):
         """Run createrepo in the destination directory."""
@@ -681,11 +666,12 @@ class RpmBuilder(object):
             "Generated:", self.generated, "",
             "Skipped:", self.skipped, "",
             "Built:", self.built, "",
+            "Failed:", self.failed, "",
         ]
         self.banner(summary)
 
 class MockRpmBuilder(RpmBuilder):
-    def __init__(self, chroot, autoclean=True, repoid=None, **kwargs):
+    def __init__(self, chroot, autoclean=True, khrepo='kernel-headers', **kwargs):
         """Initialize the MockRpmBuilder object.
 
         chroot: name of the chroot (mock --root)
@@ -693,7 +679,7 @@ class MockRpmBuilder(RpmBuilder):
         if chroot is None:
             raise ValueError("chroot argument is required.")
         self.chroot = chroot
-        self.repoid = repoid # may be None
+        self.khrepo = khrepo # may be None
         self.autoclean = autoclean
         self.inited = False
         RpmBuilder.__init__(self, **kwargs)
@@ -718,20 +704,30 @@ class MockRpmBuilder(RpmBuilder):
             self.mock('--clean', '--quiet', output=False)
             self.inited = False
 
-    def find_kversions_available(self):
+    def find_kversions(self):
         """List the linux kernel versions of the available kernel header packages in the chroot."""
         self.init_chroot()
         self.mock('--install', 'yum-utils', '--quiet', output=False) # for repoquery
-        cmd = "repoquery --show-dupes --repoid=kversions --queryformat='%{VERSION}-%{RELEASE}' kernel-devel"
         cmd = ['repoquery']
-        if self.repoid:
-            cmd.append('--repoid={0}'.format(self.repoid))
+        if self.khrepo:
+            cmd.append('--repoid={0}'.format(self.khrepo))
         cmd.append('--show-dupes')
         cmd.append('--queryformat="%{VERSION}-%{RELEASE}"')
         cmd.append('kernel-devel')
+        if self.khrepo:
+            logger.info('Searching for kernel headers in repo %s.', self.khrepo)
+        else:
+            logger.info('Searching for kernel headers in enabled repos.')
         output = self.mock('--quiet', '--chroot', ' '.join(cmd), quiet=True)
-        logger.debug("kernel versions: {0}".format(" ".join(output)))
-        return output
+        versions = []
+        for line in output:
+            if line.startswith('rpmdb:'):
+                continue # skip error messages
+            if line.startswith('error:'):
+                continue # skip error messages
+            logger.info("found headers for kernel version: %s", line)
+            versions.append(line)
+        return versions
 
     def build_srpm(self):
         """Build the source rpm with mock."""
@@ -804,8 +800,6 @@ class MockRpmBuilder(RpmBuilder):
             kversion = trim(kversion, '.'+self.arch)
 
         info = ["Building module for {kversion}".format(kversion=kversion)]
-        if self.count and self.total:
-            info.append("Number {count} of {total}.".format(count=self.count, total=self.total))
         self.banner(info)
 
         self.init_chroot()
@@ -861,6 +855,8 @@ def package(**kwargs):
 
     if list_kversions:
         kversions = b.find_kversions()
+        for kversion in kversions:
+            print(kversion)
         return
 
     if build == 'sources':
