@@ -26,6 +26,7 @@ import re
 
 from afsutil.system import file_should_exist
 import afsutil.service
+import afsutil.transarc
 
 logger = logging.getLogger(__name__)
 
