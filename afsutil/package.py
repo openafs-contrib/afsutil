@@ -671,7 +671,7 @@ class RpmBuilder(object):
         self.banner(summary)
 
 class MockRpmBuilder(RpmBuilder):
-    def __init__(self, chroot, autoclean=True, khrepo='kernel-headers', **kwargs):
+    def __init__(self, chroot, autoclean=True, khrepo='kernel-devel', **kwargs):
         """Initialize the MockRpmBuilder object.
 
         chroot: name of the chroot (mock --root)
@@ -715,9 +715,9 @@ class MockRpmBuilder(RpmBuilder):
         cmd.append('--queryformat="%{VERSION}-%{RELEASE}"')
         cmd.append('kernel-devel')
         if self.khrepo:
-            logger.info('Searching for kernel headers in repo %s.', self.khrepo)
+            logger.debug('Searching for kernel-devel in repo %s.', self.khrepo)
         else:
-            logger.info('Searching for kernel headers in enabled repos.')
+            logger.debug('Searching for kernel-devel in enabled repos.')
         output = self.mock('--quiet', '--chroot', ' '.join(cmd), quiet=True)
         versions = []
         for line in output:
@@ -725,7 +725,7 @@ class MockRpmBuilder(RpmBuilder):
                 continue # skip error messages
             if line.startswith('error:'):
                 continue # skip error messages
-            logger.info("found headers for kernel version: %s", line)
+            logger.debug("found kernel-devel for kernel version: %s", line)
             versions.append(line)
         return versions
 
