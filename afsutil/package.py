@@ -360,13 +360,15 @@ class RpmBuilder(object):
         logger.info("Copying user supplied CellServDB '{0}' to '{1}'.".format(src, dst))
         mkdirp(os.path.dirname(dst))
         shutil.copy(src, dst)
-        if self.spec:
-            n,v = self.lookup_source('CellServDB')
-            old = "Source{0}: {1}".format(n, v)
-            new = "Source{0}: {1}".format(n, os.path.basename(src))
-            logger.info("Updating spec {0} with new CellServDB name.".format(self.spec))
-            writefile(self.spec, readfile(self.spec).replace(old, new))
+        self.downloaded.append(dst)
         return dst
+
+    def change_csdb_source(self, csdb):
+        n,v = self.lookup_source('CellServDB')
+        old = "Source{0}: {1}".format(n, v)
+        new = "Source{0}: {1}".format(n, os.path.basename(csdb))
+        logger.info("Updating spec {0} with new CellServDB name.".format(self.spec))
+        writefile(self.spec, readfile(self.spec).replace(old, new))
 
     def prepare_sources_csdb(self):
         """Set the CellServDB file to be packaged.
@@ -379,7 +381,15 @@ class RpmBuilder(object):
         if self.csdb:
             return # already have the CellServDB
         if self.custom_csdb:
-            self.csdb = self.copy_csdb(self.custom_csdb)
+            csdb = self.custom_csdb
+            if csdb.startswith('http://') or csdb.startswith('https://'):
+                self.csdb = self.download_csdb(csdb)
+            else:
+                self.csdb = self.copy_csdb(csdb)
+            if self.spec:
+                self.change_csdb_source(csdb)
+            else:
+                logger.warning("Skipping csdb source update in spec file.")
         else:
             n,url = self.lookup_source(r'^https?://.*CellServDB')
             if url:
