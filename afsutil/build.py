@@ -140,11 +140,11 @@ def _make_tarball(tarball=None):
     tar(tarball, sysname)
     logger.info("Created tar file %s", tarball)
 
-def _cfadd(cf, option):
+def _cfrm(cf, option):
     if option in cf:
         cf.remove(option)
 
-def _cfrm(cf, option):
+def _cfadd(cf, option):
     if option not in cf:
         cf.append(option)
 
@@ -155,6 +155,7 @@ def build(**kwargs):
     deprecated, but old habits die hard.
     """
     cf = kwargs.get('cf', cfopts())
+    xcf = kwargs.get('xcf', [])
     target = kwargs.get('target', 'all')
     clean = kwargs.get('clean', True)
     no_transarc_paths = kwargs.get('no_transarc_paths', False)
@@ -164,6 +165,8 @@ def build(**kwargs):
     tarball = kwargs.get('tarball', None)
 
     cf = shlex.split(cf)  # Note: shlex handles quoting properly.
+    for x in xcf:
+	_cfadd(cf, x)
     if no_transarc_paths:
         _cfrm(cf, '--enable-transarc-paths')
     if no_modern_kmod_name:

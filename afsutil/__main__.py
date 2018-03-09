@@ -60,6 +60,7 @@ def check(**args):
 @subcommand(
     argument('--chdir', help='change to directory'),
     argument('--cf', help='configure options', default=afsutil.build.cfopts()),
+    argument('--xcf', help='extra configure options', nargs='*', default=[]),
     argument('--target', help='make target', default='all'),
     argument('--no-clean', help='do not run git clean',
                            dest='clean', default=True, action='store_false'),
