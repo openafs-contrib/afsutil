@@ -56,8 +56,8 @@ root = argparse.ArgumentParser()
 parent = root.add_subparsers(dest='subcommand')
 config = ConfigParser()
 config.read([
-    '/etc/{0}.ini'.format(progname),
-    os.path.expanduser('~/.{0}.ini'.format(progname)),
+    '/etc/{0}.cfg'.format(progname),
+    os.path.expanduser('~/.{0}.cfg'.format(progname)),
 ])
 
 def _get_config(section, option, default):
