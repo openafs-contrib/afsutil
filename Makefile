@@ -1,57 +1,78 @@
-PACKAGE=afsutil
-.PHONY: help lint test package version sdist wheel install install-user uninstall clean
+# Copyright (c) 2018 Sine Nomine Associates
 
 help:
 	@echo "usage: make <target> [<target> ...]"
-	@echo "targets:"
-	@echo "  help         - display targets"
-	@echo "  lint         - run python linter"
-	@echo "  test         - run unit tests"
-	@echo "  package      - build distribution files"
-	@echo "  sdist        - create source distribution file"
-	@echo "  wheel        - create wheel distribution file"
-	@echo "  install      - install package, global (requires root)"
-	@echo "  install-user - install package, user"
-	@echo "  install-dev  - install package, development"
-	@echo "  uninstall    - uninstall package"
-	@echo "  clean        - remove generated files"
+	@echo "packaging:"
+	@echo "  sdist          create source distribution"
+	@echo "  wheel          create wheel distribution"
+	@echo "  rpm            create rpm package"
+	@echo "  deb            create deb package"
+	@echo "installation:"
+	@echo "  install        install package"
+	@echo "  uninstall      uninstall package"
+	@echo "  install-user   user mode install"
+	@echo "  uninstall-user user mode uninstall"
+	@echo "  install-dev    developer mode install"
+	@echo "  uninstall-dev  developer mode uninstall"
+	@echo "development:"
+	@echo "  lint           run python linter"
+	@echo "  test           run unit tests"
+	@echo "  clean          delete generated files"
+	@echo "  distclean      delete generated and config files"
 
+Makefile.config: configure.py
+	python configure.py > $@
 
-lint:
-	pyflakes $(PACKAGE)/*.py $(PACKAGE)/system/*.py test/*.py
+include Makefile.config
+
+version: $(NAME)/__version__.py
+
+$(NAME)/__version__.py:
+	echo "VERSION = '$(VERSION)'" >$@
+
+lint: version
+	$(PYFLAKES) $(NAME)/*.py
 
 test: version
-	python -m test.test_system -v
-	python -m test.test_keytab -v
-	#python -m test.test_package -v
-
-package: sdist wheel
-
-version:
-	echo "VERSION = '$$(git describe --tags | sed 's/^v//')'" > $(PACKAGE)/__version__.py
+	$(PYTHON) -m unittest -v test
 
 sdist: version
-	python setup.py sdist
+	$(PYTHON) setup.py sdist
 
 wheel: version
-	python setup.py bdist_wheel
+	$(PYTHON) setup.py bdist_wheel
+
+rpm: version
+	$(PYTHON) setup.py bdist_rpm
+
+deb: version
+	$(PYTHON) setup.py --command-packages=stdeb.command bdist_deb
 
 install: version
-	pip install --upgrade --no-deps --no-index .
+	$(MAKE) -f Makefile.$(INSTALL) $@
 
 install-user: version
-	pip install --user --upgrade --no-deps --no-index .
+	$(MAKE) -f Makefile.$(INSTALL) $@
 
-install-dev: version lint
-	pip install --user --no-deps --no-index --editable .
+install-dev: version
+	$(MAKE) -f Makefile.$(INSTALL) $@
 
 uninstall:
-	pip uninstall -y $(PACKAGE)
+	$(MAKE) -f Makefile.$(INSTALL) $@
+
+uninstall-user:
+	$(MAKE) -f Makefile.$(INSTALL) $@
+
+uninstall-dev:
+	$(MAKE) -f Makefile.$(INSTALL) $@
 
 clean:
-	-rm -f *.pyc
-	-rm -f test/*.pyc
-	-rm -f $(PACKAGE)/*.pyc
-	-rm -f $(PACKAGE)/__version__.py
-	-rm -f $(PACKAGE)/system/*.pyc
-	-rm -fr $(PACKAGE).egg-info/ build/ dist/
+	rm -f *.pyc test/*.pyc $(NAME)/*.pyc
+	rm -fr $(NAME).egg-info/ build/ dist/
+	rm -fr $(NAME)*.tar.gz deb_dist/
+	rm -f MANIFEST
+
+distclean: clean
+	rm -f $(NAME)/__version__.py
+	rm -f Makefile.config
+	rm -f files.txt
