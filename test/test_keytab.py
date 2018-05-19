@@ -33,7 +33,7 @@ have_klist = afsutil.system.which("klist")
 asetkey_new= os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "asetkey-new")
 asetkey_old= os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "asetkey-old")
 
-class _KeytabTest(unittest.TestCase):
+class KeytabTest(unittest.TestCase):
     """Requires kinit and a pregenerated keytab."""
 
     def __init__(self, *args, **kwargs):
