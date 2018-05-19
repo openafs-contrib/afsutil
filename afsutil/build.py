@@ -157,9 +157,7 @@ def build(**kwargs):
     cf = kwargs.get('cf', cfopts())
     xcf = kwargs.get('xcf', [])
     target = kwargs.get('target', 'all')
-    clean = kwargs.get('clean', True)
-    no_transarc_paths = kwargs.get('no_transarc_paths', False)
-    no_modern_kmod_name = kwargs.get('no_modern_kmod_name', False)
+    clean = kwargs.get('clean', False)
     jobs = kwargs.get('jobs', 1)
     srcdir = kwargs.get('srcdir', '.')
     tarball = kwargs.get('tarball', None)
@@ -167,10 +165,6 @@ def build(**kwargs):
     cf = shlex.split(cf)  # Note: shlex handles quoting properly.
     for x in xcf:
 	_cfadd(cf, x)
-    if no_transarc_paths:
-        _cfrm(cf, '--enable-transarc-paths')
-    if no_modern_kmod_name:
-        _cfrm(cf, '--with-linux-kernel-packaging')
 
     # Sadly, the top-level target depends on the mode we are
     # building.
