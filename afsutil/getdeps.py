@@ -31,9 +31,28 @@ from afsutil.system import sh, CommandFailed
 logger = logging.getLogger(__name__)
 
 def _debian_getdeps():
-    sh('apt-get', '-y', 'build-dep', 'openafs', output=False)
-    sh('apt-get', '-y', 'install', 'linux-headers-%s' % platform.release(), output=False)
-    sh('apt-get', '-y', 'install', 'libtool', output=False)
+    sh('apt-get', '-y', 'install',
+        'autoconf',
+        'automake',
+        'bison',
+        'comerr-dev',
+        'dblatex',
+        'dkms',
+        'docbook-xsl',
+        'doxygen',
+        'flex',
+        'libelf-dev',
+        'libfuse-dev',
+        'libkrb5-dev',
+        'libncurses5-dev',
+        'libpam0g-dev',
+        'libtool',
+        'libxml2-utils',
+        'linux-headers-%s' % platform.release(),
+        'perl',
+        'pkg-config',
+        'xsltproc',
+        output=False)
 
 def _centos_getdeps():
     sh('yum', 'install', '-y',
