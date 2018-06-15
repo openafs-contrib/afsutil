@@ -24,9 +24,6 @@ setup(
             'afsutil = afsutil.__main__:main'
         ]
     },
-    package_data={
-        'afsutil':['data/*.init'],
-    },
     include_package_data=True,
     test_suite='test',
     zip_safe=False,

@@ -210,8 +210,7 @@ load_client() {
 	fi
 
 	# We need exportfs in order to access the cache files. Load it, but
-	# ignore errors as on some machines it may be built in to the kernel,
-	# not a module
+	# ignore errors as on some machines it may be built in to the kernel.
 	/sbin/modprobe exportfs >/dev/null 2>&1
 
 	if [ -f $KSYMS_FILE ]; then

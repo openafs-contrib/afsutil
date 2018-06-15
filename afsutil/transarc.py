@@ -24,10 +24,10 @@ import logging
 import os
 import shutil
 import glob
-import pkg_resources
 import tempfile
 import urllib2
 
+import afsutil
 from afsutil.install import Installer, \
                             copy_files, remove_file, remove_files
 
@@ -96,10 +96,11 @@ class LinuxClientSetup(TransarcClientSetup):
         """
         # Install the init script.
         mkdirp("/var/lock/subsys/")
-        src = pkg_resources.resource_filename('afsutil', 'data/openafs-client-linux.init')
+        text = afsutil.resources['openafs-client-linux.init']
         dst = "/etc/init.d/openafs-client"
-        logger.info("Installing client init script from '%s' to '%s'.", src, dst)
-        shutil.copy2(src, dst)
+        logger.info("Installing client init script from to '%s'.", dst)
+        with open(dst, 'w') as f:
+            f.write(text)
         os.chmod(dst, 0755)
         # Set afsd options.
         dst = path_join(SYSCONFIG, "openafs-client")
@@ -160,10 +161,11 @@ class SolarisClientSetup(TransarcClientSetup):
         reboot.  Changes the init script to avoid starting the bosserver
         by default."""
         osrel = os.uname()[2]
-        src = pkg_resources.resource_filename('afsutil', 'data/openafs-client-solaris-%s.init' % (osrel))
+        text = afsutil.resources['openafs-client-solaris-%s.init' % (osrel)]
         dst = "/etc/init.d/openafs-client"
-        logger.info("Installing client init script from '%s' to '%s'.", src,dst)
-        shutil.copy2(src, dst)
+        logger.info("Installing client init script to '%s'.", dst)
+        with open(dst, 'w') as f:
+            f.write(text)
         os.chmod(dst, 0755)
         # Set afsd options.
         config = '/usr/vice/etc/config'
@@ -286,11 +288,12 @@ class TransarcInstaller(Installer):
         Does not configure the system to run the init script automatically on
         reboot.
         """
-        src = pkg_resources.resource_filename('afsutil', 'data/openafs-server.init')
+        text = afsutil.resources['openafs-server.init']
         dst = "/etc/init.d/openafs-server"
         if os.path.exists(dst) and not self.force:
             raise AssertionError("Refusing to overwrite '%s'.", dst)
-        shutil.copy2(src, dst)
+        with open(dst, 'w') as f:
+            f.write(text)
         os.chmod(dst, 0755)
         mkdirp("/var/lock/subsys/")  # needed by the init script
         # Set the bosserver command line options.

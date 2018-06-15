@@ -28,7 +28,16 @@ include Makefile.config
 $(NAME)/__version__.py:
 	echo "VERSION = '$(VERSION)'" >$@
 
-generated: $(NAME)/__version__.py
+RESOURCES = \
+  resources/openafs-client-linux.init \
+  resources/openafs-client-solaris-5.10.init \
+  resources/openafs-client-solaris-5.11.init \
+  resources/openafs-server.init
+
+$(NAME)/__resources__.py: $(RESOURCES)
+	$(PYTHON) generate.py -o $@ $(RESOURCES)
+
+generated: $(NAME)/__version__.py $(NAME)/__resources__.py
 
 lint: generated
 	$(PYFLAKES) $(NAME)/*.py
@@ -74,5 +83,6 @@ clean:
 
 distclean: clean
 	rm -f $(NAME)/__version__.py
+	rm -f $(NAME)/__resources__.py
 	rm -f Makefile.config
 	rm -f files.txt
