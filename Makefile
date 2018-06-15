@@ -40,7 +40,7 @@ $(NAME)/__resources__.py: $(RESOURCES)
 generated: $(NAME)/__version__.py $(NAME)/__resources__.py
 
 lint: generated
-	$(PYFLAKES) $(NAME)/*.py
+	$(PYFLAKES) $(NAME)/*.py $(NAME)/*/*.py
 
 test: generated
 	$(PYTHON) -m unittest -v test
