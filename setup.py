@@ -19,11 +19,9 @@ setup(
         'afsutil',
         'afsutil.system',
     ],
-    entry_points={
-        'console_scripts': [
-            'afsutil = afsutil.__main__:main'
-        ]
-    },
+    scripts=[
+        'bin/afsutil',
+    ],
     include_package_data=True,
     test_suite='test',
     zip_safe=False,
