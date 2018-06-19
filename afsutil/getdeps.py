@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2017 Sine Nomine Associates
+# Copyright (c) 2014-2018 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -18,7 +18,7 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-"""Install build dependencies (developer tool)"""
+"""Install build dependencies for OpenAFS."""
 
 import logging
 import os
@@ -30,240 +30,268 @@ from afsutil.system import sh, CommandFailed
 
 logger = logging.getLogger(__name__)
 
-def _debian_getdeps():
-    sh('apt-get', '-y', 'install',
-        'autoconf',
-        'automake',
-        'bison',
-        'comerr-dev',
-        'dblatex',
-        'dkms',
-        'docbook-xsl',
-        'doxygen',
-        'flex',
-        'libelf-dev',
-        'libfuse-dev',
-        'libkrb5-dev',
-        'libncurses5-dev',
-        'libpam0g-dev',
-        'libtool',
-        'libxml2-utils',
-        'linux-headers-%s' % platform.release(),
-        'perl',
-        'pkg-config',
-        'xsltproc',
-        output=False)
+class Unsupported(Exception):
+    pass
 
-def _centos_getdeps():
-    sh('yum', 'install', '-y',
-       'gcc',
-       'autoconf',
-       'automake',
-       'libtool',
-       'make',
-       'flex',
-       'bison',
-       'glibc-devel',
-       'krb5-devel',
-       'perl-devel',
-       'ncurses-devel',
-       'pam-devel',
-       'fuse-devel',
-       'kernel-devel-%s' % platform.release(),
-       'perl-ExtUtils-Embed',
-       'wget',
-       'rpm-build',
-       'redhat-rpm-config',
-       output=False)
+def apt_get_install(packages, dryrun=False):
+    sh('apt-get', '-y', 'install', *packages, dryrun=dryrun, output=False)
 
-def _opensuse_getdeps():
-    sh('zypper', 'install', '-y',
-       'gcc',
-       'autoconf',
-       'automake',
-       'libtool',
-       'make',
-       'flex',
-       'bison',
-       'glibc-devel',
-       'krb5-devel',
-       'ncurses-devel',
-       'pam-devel',
-       'fuse-devel',
-       'kernel-devel',
-       'wget',
-       'rpm-build',
-       output=False)
-    #'perl-devel',
-    #'perl-ExtUtils-Embed',
-    #'redhat-rpm-config',
+def yum_install(packages, dryrun=False):
+    sh('yum', 'install', '-y', *packages, dryrun=dryrun, output=False)
 
-def _fedora_getdeps():
-    rel = platform.dist()[1]
-    if rel >= 22:
-        package_manager = 'dnf'
-    else:
-        package_manager = 'yum'
-    sh(package_manager, 'install', '-y',
-       'gcc',
-       'autoconf',
-       'automake',
-       'libtool',
-       'make',
-       'flex',
-       'bison',
-       'glibc-devel',
-       'krb5-devel',
-       'perl-devel',
-       'ncurses-devel',
-       'pam-devel',
-       'fuse-devel',
-       'kernel-devel-%s' % platform.release(),
-       'perl-ExtUtils-Embed',
-       'wget',
-       'rpm-build',
-       'redhat-rpm-config',
-       output=False)
+def dnf_install(packages, dryrun=False):
+    sh('dnf', 'install', '-y', *packages, dryrun=dryrun, output=False)
 
-def _download(baseurl, filename, path):
-    url = os.path.join(baseurl, filename)
-    dst = os.path.join(path, filename)
-    rsp = urllib2.urlopen(url)
-    logger.info("Downloading %s to %s", url, dst)
-    with open(dst, 'wb') as fh:
-        fh.write(rsp.read())
+def zypper_install(packages, dryrun=False):
+    sh('zypper', 'install', '-y', *packages, dryrun=dryrun, output=False)
 
-def _compare_versions(a, b):
-    def _normalize(s):
-        return [int(x) for x in s.split('.')]
-    return cmp(_normalize(a), _normalize(b))
+def pkg_install(packages, dryrun=False):
+    # Ignore package already installed errors.
+    ERROR_ALREADY_INSTALLED = 4
+    try:
+        sh('pkg', 'install', '--accept', *packages, dryrun=dryrun, output=False)
+    except CommandFailed as e:
+        if e.code != ERROR_ALREADY_INSTALLED:
+            logger.error("pkg install failed: %s" % e)
+            raise e
 
-def _sol11_getdeps(**kwargs):
-    """Install solaris studio and development packages.
+def lookup_solarisstudio(creds='/root/creds',
+                         key='pkg.oracle.com.key.pem',
+                         cert='pkg.oracle.com.certificate.pem',
+                         **kwargs):
+    """
+    Lookup the Solaris Studio package.
 
     Before running this function, create an account on the Oracle Technology Network
     and follow the instructions to create and download the key and certificate files.
     Place the key and cert file in a local directory or at a private url.  The
     default location of the key and cert files is /root/creds. Set the 'creds'
-    keyward argurment to specify a different path or a url.
+    keyword argurment to specify a different path or a url.
     """
-    creds = kwargs.get('creds', '/root/creds')
-    key = kwargs.get('key', 'pkg.oracle.com.key.pem')
-    cert = kwargs.get('cert', 'pkg.oracle.com.certificate.pem')
     path = None
     tmpdir = None
+    quiet = True
 
-    try:
-        if creds.startswith('http://') or creds.startswith('https://'):
-            path = tmpdir = tempfile.mkdtemp()
-            _download(creds, key, tmpdir)
-            _download(creds, cert, tmpdir)
-        elif os.path.exists(creds):
-            path = creds
-        else:
-            raise ValueError("creds path '%s' not found." % creds)
+    def download(baseurl, filename, path):
+        url = os.path.join(baseurl, filename)
+        dst = os.path.join(path, filename)
+        rsp = urllib2.urlopen(url)
+        logger.info("Downloading '%s' to '%s'.", url, dst)
+        with open(dst, 'wb') as f:
+            f.write(rsp.read())
 
-        logger.info("Setting publisher for solarisstudio.")
-        sh('pkg', 'set-publisher',   # Will refresh if already set.
-           '-k', os.path.join(path, key),
-           '-c', os.path.join(path, cert),
-           '-G', '*',
-           '-g', 'https://pkg.oracle.com/solarisstudio/release', 'solarisstudio',
-           output=False)
+    def normalize(s):
+        return [int(x) for x in s.split('.')]
 
-        logger.info("Getting available solarisstudio packages.")
-        output = sh('pkg', 'list', '-H', '-a', '-v', '--no-refresh', 'pkg://solarisstudio/*', quiet=True)
-        packages = {}
-        installed = False # alread installed?
-        for line in output:
-            # Extract the root package name, version, and install state.
-            # Example:
-            # 'pkg://solarisstudio/developer/developerstudio-125@12.5,5.11-1.0.0.0:20160614T214517Z ---'
-            # name='developerstudio-125'; version='12.5'; installed=False
-            fmri,ifo = line.split()
-            pkg,vt = fmri.split('@')
-            v,t = vt.split(':')
-            version = v.split(',')[0]
-            name = pkg.replace('pkg://solarisstudio/developer/','')
-            istate = ifo[0] == 'i'
-            if not '/' in name:
-                # skip non-root ones, e.g. 'developerstudio-125/cc'
-                logger.info("Found package %s, version %s, installed %s" % (name, version, istate))
-                packages[name] = {'version':version, 'installed':istate}
-                if istate:
-                    installed = True
+    def compare_versions(a, b):
+        return cmp(normalize(a), normalize(b))
 
-        if installed:
-            logger.info("Skipping solarisstudio install; already installed.")
-        else:
-            logger.info("Determining which solarisstudio package to install.")
-            pkg = None
-            vers = '0.0' # Find the most recent version.
-            for name in packages.keys():
-                if _compare_versions(packages[name]['version'], vers) > 0:
-                    vers = packages[name]['version']
-                    pkg = 'pkg://solarisstudio/developer/%s' % name
-            if pkg is None:
-                raise AssertionError("Unable to find a solarisstudio package to install.")
-
-            logger.info("Installing solarisstudio package '%s'." % (pkg))
-            sh('pkg', 'install', '--accept', pkg, output=False)
-
-
-        logger.info("Installing development packages.")
+    if creds.startswith('http://') or creds.startswith('https://'):
         try:
-            sh('pkg', 'install',
-            'autoconf',
-            'automake',
-            'bison',
-            'flex',
-            'git',
-            'gnu-binutils',
-            'gnu-coreutils',
-            'gnu-sed',
-            'libtool',
-            'make',
-            'onbld',
-            'text/locale',
-            output=False)
-        except CommandFailed as e:
-            if e.code != 4:  # 4 is means installed (not an error)
-                logger.error("pkg install failed: %s" % e)
-
-    except urllib2.HTTPError as e:
-        logger.error("Unable to download files from url '%s', %s'" % (creds, e))
-    except ValueError as e:
-        logger.error("%s" % e)
-    finally:
-        if tmpdir:
-            logger.info("Cleaning up temp files.")
+            path = tmpdir = tempfile.mkdtemp()
+            download(creds, key, tmpdir)
+            download(creds, cert, tmpdir)
+        except urllib2.HTTPError as e:
+            logger.error("Unable to download files from url '%s', %s'." % (creds, e))
+            return None
+        finally:
+            logger.info("Cleaning up temporary files in '%s'.", tmpdir)
             if os.path.exists(os.path.join(tmpdir, key)):
                 os.remove(os.path.join(tmpdir, key))
             if os.path.exists(os.path.join(tmpdir, cert)):
                 os.remove(os.path.join(tmpdir, cert))
             if os.path.exists(tmpdir) and tmpdir != "/":
                 os.rmdir(tmpdir)
+    elif os.path.exists(creds):
+        logger.info("Using credentials in path '%s'.", creds)
+        path = creds
+    else:
+        logger.error("creds path '%s' not found.", creds)
+        return None
 
-def getdeps(**kwargs):
-    """Install build dependencies for this platform."""
-    system = platform.system()
-    if system == 'Linux':
-        dist = platform.dist()[0]
-        if dist == 'debian' or dist == 'Ubuntu':
-            _debian_getdeps()
+    logger.info("Setting publisher for solarisstudio.")
+    sh('pkg', 'set-publisher',   # Will refresh if already set.
+       '-k', os.path.join(path, key),
+       '-c', os.path.join(path, cert),
+       '-G', '*',
+       '-g', 'https://pkg.oracle.com/solarisstudio/release', 'solarisstudio',
+       output=False, quiet=quiet)
+
+    logger.info("Getting available solaris studio packages.")
+    packages = {}
+    output = sh('pkg', 'list', '-H', '-a', '-v', '--no-refresh',
+                'pkg://solarisstudio/*', quiet=quiet)
+    for line in output:
+        # Extract the root package name, version, and install state.
+        fmri,ifo = line.split()
+        pkg,vt = fmri.split('@')
+        v,t = vt.split(':')
+        version = v.split(',')[0]
+        name = pkg.replace('pkg://solarisstudio/developer/','')
+        istate = ifo[0] == 'i'
+        if not '/' in name:
+            # Skip non-root ones, e.g. 'developerstudio-125/cc'.
+            logger.info("Found package %s, version %s, installed %s.",
+                        name, version, istate)
+            packages[name] = {'version':version, 'installed':istate}
+
+    # Find the most recent version.
+    solarisstudio = None
+    vers = '0.0'
+    for name in packages.keys():
+        if compare_versions(packages[name]['version'], vers) > 0:
+            vers = packages[name]['version']
+            solarisstudio = 'pkg://solarisstudio/developer/{0}'.format(name)
+    if solarisstudio:
+        logger.info("Most recent version found is '%s'.", solarisstudio)
+    else:
+        logger.info("Could not find solaris studio package.")
+    return solarisstudio
+
+def getdeps(dryrun=False, skip_headers=False, **kwargs):
+    """Determine platform and install build dependencies."""
+    system = platform.system().lower()
+    if system == 'linux':
+        dist = platform.dist()[0].lower()
+        release = platform.dist()[1].lower()
+        if dist == 'debian' or dist == 'ubuntu':
+            packages = [
+                'autoconf',
+                'automake',
+                'bison',
+                'comerr-dev',
+                'dblatex',
+                'dkms',
+                'docbook-xsl',
+                'doxygen',
+                'flex',
+                'libelf-dev',
+                'libfuse-dev',
+                'libkrb5-dev',
+                'libncurses5-dev',
+                'libpam0g-dev',
+                'libtool',
+                'libxml2-utils',
+                'perl',
+                'pkg-config',
+                'xsltproc',
+            ]
+            if not skip_headers:
+                packages.append('linux-headers-{0}'.format(platform.release()))
+            apt_get_install(packages, dryrun)
         elif dist == 'centos':
-            _centos_getdeps()
-        elif dist == 'SuSE':
-            _opensuse_getdeps()
+            packages = [
+                'autoconf',
+                'automake',
+                'bison',
+                'flex',
+                'fuse-devel',
+                'gcc',
+                'glibc-devel',
+                'krb5-devel',
+                'libtool',
+                'make',
+                'ncurses-devel',
+                'pam-devel',
+                'perl-devel',
+                'perl-ExtUtils-Embed',
+                'redhat-rpm-config',
+                'rpm-build',
+                'wget',
+            ]
+            if not skip_headers:
+                packages.append('kernel-devel-{0}'.format(platform.release()))
+            yum_install(packages, dryrun)
+        elif dist == 'suse':
+            packages = [
+                'autoconf',
+                'automake',
+                'bison',
+                'flex',
+                'fuse-devel',
+                'gcc',
+                'glibc-devel',
+                'krb5-devel',
+                'libtool',
+                'make',
+                'ncurses-devel',
+                'pam-devel',
+                'rpm-build',
+                'wget',
+            ]
+            if not skip_headers:
+                packages.append('kernel-devel')
+            zypper_install(packages, dryrun)
+        elif dist == 'fedora' and release < 22:
+            packages = [
+                'autoconf',
+                'automake',
+                'bison',
+                'flex',
+                'fuse-devel',
+                'gcc',
+                'glibc-devel',
+                'krb5-devel',
+                'libtool',
+                'make',
+                'ncurses-devel',
+                'pam-devel',
+                'perl-devel',
+                'perl-ExtUtils-Embed',
+                'redhat-rpm-config',
+                'rpm-build',
+                'wget',
+            ]
+            if not skip_headers:
+                packages.append('kernel-devel-{0}'.format(platform.release()))
+            yum_install(packages, dryrun)
         elif dist == 'fedora':
-            _fedora_getdeps()
+            packages = [
+                'autoconf',
+                'automake',
+                'bison',
+                'flex',
+                'fuse-devel',
+                'gcc',
+                'glibc-devel',
+                'krb5-devel',
+                'libtool',
+                'make',
+                'ncurses-devel',
+                'pam-devel',
+                'perl-devel',
+                'perl-ExtUtils-Embed',
+                'redhat-rpm-config',
+                'rpm-build',
+                'wget',
+            ]
+            if not skip_headers:
+                packages.append('kernel-devel-{0}'.format(platform.release()))
+            dnf_install(packages, dryrun)
         else:
-            raise AssertionError("Unsupported dist: %s" % (dist))
-    elif system == 'SunOS':
+            raise Unsupported("Linux dist '{0}'.".format(dist))
+    elif system == 'sunos':
         release = platform.release()
         if release == '5.11':
-            _sol11_getdeps(**kwargs)
+            packages = [
+                'autoconf',
+                'automake',
+                'bison',
+                'flex',
+                'git',
+                'gnu-binutils',
+                'gnu-coreutils',
+                'gnu-sed',
+                'libtool',
+                'make',
+                'onbld',
+                'text/locale',
+            ]
+            solarisstudio = lookup_solarisstudio(**kwargs)
+            if solarisstudio:
+                packages.append(solarisstudio)
+            pkg_install(packages, dryrun)
         else:
-            raise NotImplementedError()
+            raise Unsupported("Solaris release '{0}'".format(release))
     else:
-        raise AssertionError("Unsupported operating system: %s" % (system))
+        raise Unsupported("Operating system '{0}'.".format(system))

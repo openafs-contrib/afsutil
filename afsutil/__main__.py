@@ -39,9 +39,14 @@ def help(**args):
     return usage()
 
 @subcommand(
-    argument('--creds', help='path or url of repo creds',
+    argument('--creds', help='path or url of repo creds (solaris only)',
                         default='/root/creds'),
-    requires_root=True,
+    argument('-n', '--dry-run', help='do not make changes',
+                                dest='dryrun', action='store_true'),
+    argument('--skip-headers', help='do not install kernel headers',
+                               action='store_true'),
+    argument('--skip-solarisstudio', help='do not install solaris studio (solaris only)',
+                                     action='store_true'),
     )
 def getdeps(**args):
     "Install build dependencies"
