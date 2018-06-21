@@ -149,7 +149,7 @@ def lookup_solarisstudio(creds='/root/creds',
         logger.info("Could not find solaris studio package.")
     return solarisstudio
 
-def getdeps(dryrun=False, skip_headers=False, **kwargs):
+def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs):
     """Determine platform and install build dependencies."""
     system = platform.system().lower()
     if system == 'linux':
@@ -288,9 +288,10 @@ def getdeps(dryrun=False, skip_headers=False, **kwargs):
                 'onbld',
                 'text/locale',
             ]
-            solarisstudio = lookup_solarisstudio(**kwargs)
-            if solarisstudio:
-                packages.append(solarisstudio)
+            if not skip_solarisstudio:
+                solarisstudio = lookup_solarisstudio(**kwargs)
+                if solarisstudio:
+                    packages.append(solarisstudio)
             pkg_install(packages, dryrun)
         else:
             raise Unsupported("Solaris release '{0}'".format(release))
