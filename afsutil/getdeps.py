@@ -129,8 +129,9 @@ def lookup_solarisstudio(creds='/root/creds',
         version = v.split(',')[0]
         name = pkg.replace('pkg://solarisstudio/developer/','')
         istate = ifo[0] == 'i'
-        if not '/' in name:
-            # Skip non-root ones, e.g. 'developerstudio-125/cc'.
+        if '/' in name:
+            pass # Skip non-root ones, e.g. 'developerstudio-125/cc'.
+        else:
             logger.info("Found package %s, version %s, installed %s.",
                         name, version, istate)
             packages[name] = {'version':version, 'installed':istate}
