@@ -198,6 +198,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'perl-ExtUtils-Embed',
                 'redhat-rpm-config',
                 'rpm-build',
+                'swig',
                 'wget',
             ]
             if not skip_headers:
