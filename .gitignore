@@ -1,8 +1,9 @@
 *.pyc
 *.swp
 afsutil.egg-info/
-dist/
-build/
-Makefile.config
-afsutil/__version__.py
 afsutil/__resources__.py
+afsutil/__version__.py
+build/
+dist/
+files.txt
+Makefile.config
