@@ -45,7 +45,11 @@ def dnf_install(packages, dryrun=False):
 def zypper_install(packages, dryrun=False):
     sh('zypper', 'install', '-y', *packages, dryrun=dryrun, output=False)
 
-def pkg_install(packages, dryrun=False):
+def pkg_install(packages, dryrun=False, update_all=True):
+    # Recent versions of solarisstudio fail to install due to dependency
+    # conflicts unless the system is updated first.
+    if update_all:
+        sh('pkg', 'update', '-v', 'entire@latest', dryrun=dryrun, output=False)
     # Ignore package already installed errors.
     ERROR_ALREADY_INSTALLED = 4
     try:
