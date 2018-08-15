@@ -16,6 +16,7 @@ help:
 	@echo "  uninstall-dev  developer mode uninstall"
 	@echo "development:"
 	@echo "  lint           run python linter"
+	@echo "  checkdocs      check syntax of documentation files"
 	@echo "  test           run unit tests"
 	@echo "  clean          delete generated files"
 	@echo "  distclean      delete generated and config files"
@@ -41,6 +42,9 @@ generated: $(NAME)/__version__.py $(NAME)/__resources__.py
 
 lint: generated
 	$(PYFLAKES) $(NAME)/*.py $(NAME)/*/*.py
+
+checkdocs: # requires collective.checkdocs
+	$(PYTHON) setup.py checkdocs
 
 test: generated
 	$(PYTHON) -m unittest -v test

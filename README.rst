@@ -2,56 +2,48 @@
 afsutil
 =======
 
-Utility classes and command-line tool to build, install, and setup OpenAFS.
-
-Classes
--------
-
-::
-
-    build     build and package OpenAFS from source
-    cell      setup a new OpenAFS cell
-    cmd       basic OpenAFS command wrappers
-    install   interface to install and remove OpenAFS binaries
-    keytab    import Kerberos 5 keytabs and create fake keytabs for testing
-    rpm       install and remove OpenAFS rpm packages
-    service   interface to start and stop OpenAFS services
-    system    misc system utilities
-    transarc  install and remove legacy Transarc-style OpenAFS binaries
+**afsutil** is a command-line tool to build, install, and setup OpenAFS for
+developers and testers.
 
 Command line interface
 ----------------------
 
 ::
 
-    usage: afsutil <command> ...
-    where command is:
-        version   print version information
-        getdeps   install build dependencies
-        check     check system
-        build     build binaries
-        reload    reload the kernel module after a build
-        package   build packages
-        install   install binaries
-        remove    remove binaries
-        start     start afs services
-        stop      stop afs services
-        fakekey   generate a keytab file for testing
-        setkey    add a service key from a keytab file
-        newcell   setup a new cell
-        addfs     add a new fileserver to the cell
-        login     obtain token with a keytab
+    usage: afsutil <command> [options]
+    
+    commands:
+      version      Print version
+      help         Print usage
+      getdeps      Install build dependencies
+      check        Check hostname
+      build        Build binaries
+      reload       Reload the kernel module from the build tree
+      package      Build packages
+      install      Install binaries
+      remove       Remove binaries
+      start        Start AFS services
+      stop         Stop AFS services
+      ktcreate     Create a fake keytab
+      ktdestroy    Destroy a keytab
+      ktsetkey     Add a service key from a keytab file
+      ktlogin      Obtain a token with a keytab
+      newcell      Setup a new cell
+      mtroot       Mount root volumes in a new cell
+      addfs        Add a new fileserver to a cell
 
 Examples
 --------
 
 To build OpenAFS from sources::
 
-    afsutil build
+    $ git clone git://git.openafs.org/openafs.git
+    $ cd openafs
+    $ afsutil build
 
 To install legacy "Transarc-style" binaries::
 
-    sudo afsutil install \
+    $ sudo afsutil install \
       --force \
       --dist transarc \
       --components server client \
@@ -65,20 +57,19 @@ To install legacy "Transarc-style" binaries::
 
 To setup the OpenAFS service key from a Kerberos 5 keytab file::
 
-    sudo afsutil setkey
+    $ sudo afsutil setkey
       --cell example.com \
       --realm EXAMPLE.COM \
       --keytab /root/fake.keytab
 
-To start the OpenAFS servers and client::
+To start the OpenAFS servers::
 
-    sudo afsutil start server
-    sudo afsutil start client
+    $ sudo afsutil start server
 
-To setup a new OpenAFS cell on 3 servers (after 'afsutil install' has been run
-on each)::
+To setup a new OpenAFS cell on 3 servers, after 'afsutil install' has been run
+on each::
 
-    sudo afsutil newcell \
+    $ sudo afsutil newcell \
       --cell example.com \
       --realm EXAMPLE.COM \
       --admin example.admin \
@@ -92,3 +83,19 @@ on each)::
       -o "afsd=-dynroot -fakestat -afsdb" \
       -o "bosserver=-pidfiles" \
       -o "dafileserver=L"
+
+To start the client::
+
+    $ sudo -n afsutil start client
+
+To mount the top-level volumes after the client is running::
+
+    $ afsutil mtroot \
+     --cell example.com \
+     --admin example.admin \
+     --top test \
+     --realm EXAMPLE.COM \
+     --akimpersonate \
+     --keytab /root/fake.keytab \
+     --fs myhost1 \
+     -o "afsd=-dynroot -fakestat -afsdb"
