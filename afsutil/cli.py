@@ -60,7 +60,7 @@ config.read([
     os.path.expanduser('~/.{0}.cfg'.format(progname)),
 ])
 
-def _get_config(section, option, default):
+def _get_config(section, option, default, as_boolean):
     """Get the config option"""
     value = default
     if isinstance(value, list) or isinstance(value, tuple):
@@ -74,6 +74,13 @@ def _get_config(section, option, default):
     else:
         if config.has_option(section, option):
             value = config.get(section, option)
+    if as_boolean and not isinstance(value, bool):
+        if value is None:
+            value = False
+        elif value.lower() in ('yes', 'true', 'on', '1'):
+            value = True
+        else:
+            value = False
     return value
 
 def _long_flag(name_or_flags):
@@ -102,8 +109,9 @@ def subcommand(*arguments, **kwargs):
             name_or_flags,options = arg
             default = options.get('default') # may be a list
             flag = _long_flag(name_or_flags)
+            as_boolean = options.get('action', '') in ('store_true', 'store_false')
             if flag:
-                default = _get_config(name, flag, default)
+                default = _get_config(name, flag, default, as_boolean)
                 options['default'] = default
             if default and 'help' in options:
                 if isinstance(default, list):
