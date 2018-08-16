@@ -11,7 +11,7 @@ Command line interface
 ::
 
     usage: afsutil <command> [options]
-    
+
     commands:
       version      Print version
       help         Print usage
@@ -45,8 +45,8 @@ To install legacy "Transarc-style" binaries::
 
     $ sudo afsutil install \
       --force \
-      --dist transarc \
       --components server client \
+      --dist transarc \
       --dir /usr/local/src/openafs-test/amd64_linux26/dest \
       --cell example.com \
       --realm EXAMPLE.COM \
@@ -86,7 +86,7 @@ on each::
 
 To start the client::
 
-    $ sudo -n afsutil start client
+    $ sudo afsutil start client
 
 To mount the top-level volumes after the client is running::
 
@@ -99,3 +99,133 @@ To mount the top-level volumes after the client is running::
      --keytab /root/fake.keytab \
      --fs myhost1 \
      -o "afsd=-dynroot -fakestat -afsdb"
+
+Configuration files
+-------------------
+
+All of the command line values may be set in a configuration file.  **afsutil**
+will attempt to load the configuration from `/etc/afsutil.cfg` and then
+`$HOME/.afsutil.cfg`.  Values specified on the command line will override the
+configuration file values.
+
+The **afsutil** configuration files are in ini-style format.  The sections of
+the configuration file correspond to the subcommand names, such as, `build`,
+`install`, `newcell`. The options within each section correspond to the command
+line option names.
+
+Some subcommands, such as `install` and `newcell` have options like `--options`
+and `--paths` which consist of multiple name/values pairs. These are
+represented in the configuration file as subsection in the form
+`[<subcommand>.<option>]`.
+
+For example, the `install` command example given above has set of startup
+options for `afsd` and `bosserver`. This would be specified in the
+configuration file as::
+
+    [install]
+    force = yes
+    components = server client
+    dist = transarc
+    dir = /usr/local/src/openafs-test/amd64_linux26/dest
+    cell = example.com
+    realm = EXAMPLE.COM
+    hosts = myhost1 myhost2 myhost3
+    csdb = /root/CellServDB.dist
+
+    [install.options]
+    afsd = -dynroot -fakestat -afsdb
+    bosserver = -pidfiles
+
+Here is an example configuration file::
+
+    $ cat /etc/afsutil.cfg
+    [install]
+    cell = example.com
+    realm = EXAMPLE.COM
+    force = True
+    components = server client
+    dist = transarc
+    hosts = debian9
+
+    [install.options]
+    afsd = -dynroot -fakestat -afsdb
+    bosserver =
+
+    [ktcreate]
+    cell = example.com
+    realm = EXAMPLE.COM
+    keytab = /home/mtycobb/afsrobot/fake.keytab
+
+    [ktsetkey]
+    cell = example.com
+    realm = EXAMPLE.COM
+    keytab = /home/mtycobb/afsrobot/fake.keytab
+    format = detect
+    [ktsetkey.paths]
+    asetkey = /usr/afs/bin/asetkey
+
+    [newcell]
+    cell = example.com
+    realm = EXAMPLE.COM
+    admin = afsrobot.admin
+    fs = debian9
+    db = debian9
+
+    [newcell.options]
+    bosserver =
+    dafileserver =
+    davolserver =
+    debian9.dafileserver = -d 1 -L
+    debian9.davolserver = -d 1
+
+    [newcell.paths]
+    aklog=/home/mtycobb/.local/bin/aklog-1.6
+    asetkey=/usr/afs/bin/asetkey
+    bos=/usr/afs/bin/bos
+    fs=/usr/afs/bin/fs
+    gfind=/usr/bin/find
+    pagsh=/usr/afsws/bin/pagsh
+    pts=/usr/afs/bin/pts
+    rxdebug=/usr/afsws/etc/rxdebug
+    tokens=/usr/afsws/bin/tokens
+    udebug=/usr/afs/bin/udebug
+    unlog=/usr/afsws/bin/unlog
+    vos=/usr/afs/bin/vos
+
+    [mtroot]
+    cell = example.com
+    realm = EXAMPLE.COM
+    admin = afsrobot.admin
+    top = test
+    akimpersonate = True
+    keytab = /home/mtycobb/afsrobot/fake.keytab
+    fs = debian9
+
+    [mtroot.options]
+    afsd = -dynroot -fakestat -afsdb
+
+    [mtroot.paths]
+    aklog = /home/mtycobb/.local/bin/aklog-1.6
+    asetkey = /usr/afs/bin/asetkey
+    bos = /usr/afs/bin/bos
+    fs = /usr/afs/bin/fs
+    gfind = /usr/bin/find
+    pagsh = /usr/afsws/bin/pagsh
+    pts = /usr/afs/bin/pts
+    rxdebug = /usr/afsws/etc/rxdebug
+    tokens = /usr/afsws/bin/tokens
+    udebug = /usr/afs/bin/udebug
+    unlog = /usr/afsws/bin/unlog
+    vos = /usr/afs/bin/vos
+
+And the commands to install OpenAFS and create a new cell on a single
+machine::
+
+    sudo afsutil install
+    sudo afsutil ktcreate
+    sudo afsutil ktsetkey
+    sudo afsutil start server
+    sudo afsutil newcell
+    sudo afsutil start client
+
+    afsutil mtroot
