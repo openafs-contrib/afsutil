@@ -69,7 +69,7 @@ def check(**args):
     argument('--target', help='make target', default='all'),
     argument('--clean', help='run git clean (requires: git config afsutil.clean yes)',
                         default=False, action='store_true'),
-    argument('-j', '--jobs', help='number of parallel build jobs', default=afsutil.system.jobs()),
+    argument('-j', '--jobs', help='parallel build jobs', default=afsutil.system.nproc()),
     argument('--srcdir', help='source code directory', default='.'),
     argument('--tarball', help='path and file name of destination tarball when Transarc-style is enabled.'),
     argument('-p', '--paths', help="command paths: <cmd>=<path-to-cmd>",
