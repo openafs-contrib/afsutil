@@ -21,6 +21,7 @@ get_running = _mod.get_running
 is_afs_mounted = _mod.is_afs_mounted
 is_loaded = _mod.is_loaded
 is_running = _mod.is_running
+jobs = _mod.jobs
 mkdirp = _mod.mkdirp
 network_interfaces = _mod.network_interfaces
 nproc = _mod.nproc

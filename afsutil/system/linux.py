@@ -41,6 +41,10 @@ which = _mod.which
 
 logger = logging.getLogger(__name__)
 
+def jobs():
+    """Number of parallel jobs to run."""
+    return nproc()
+
 def get_running():
     """Get a set of running processes."""
     ps = which('ps')
