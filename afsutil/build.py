@@ -200,4 +200,4 @@ def build(**kwargs):
     make(jobs, target, program=_make)
 
     if target == 'dest':
-        _create_tarball(tarball, tar=_tar)
+        _create_tarball(tarball, program=_tar)
