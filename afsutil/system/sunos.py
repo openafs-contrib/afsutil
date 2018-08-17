@@ -119,16 +119,20 @@ def is_loaded(kmod):
 def detect_gfind():
     return which('gfind', extra_paths=['/opt/csw/bin'])
 
-def tar(tarball, source_path):
-    sh('gtar', 'czf', tarball, source_path, quiet=True)
+def tar(tarball, source_path, tar=None):
+    if tar is None:
+        tar = 'gtar'
+    sh(tar, 'czf', tarball, source_path, quiet=True)
 
-def untar(tarball, chdir=None):
+def untar(tarball, chdir=None, tar=None):
+    if tar is None:
+        tar = 'gtar'
     savedir = None
     if chdir:
         savedir = os.getcwd()
         os.chdir(chdir)
     try:
-        sh('gtar', 'xzf', tarball, quiet=True)
+        sh(tar, 'xzf', tarball, quiet=True)
     finally:
         if savedir:
             os.chdir(savedir)

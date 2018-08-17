@@ -72,6 +72,8 @@ def check(**args):
     argument('-j', '--jobs', help='parallel build jobs', default=afsutil.system.nproc()),
     argument('--srcdir', help='source code directory', default='.'),
     argument('--tarball', help='path and file name of destination tarball when Transarc-style is enabled.'),
+    argument('-p', '--paths', help="command paths: <cmd>=<path-to-cmd>",
+                              nargs='+', action='append', default=[]),
     )
 def build(**args):
     "Build binaries"

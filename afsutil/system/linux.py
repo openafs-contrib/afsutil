@@ -134,16 +134,20 @@ def unload_module():
 def detect_gfind():
     return which('find')
 
-def tar(tarball, source_path):
-    sh('tar', 'czf', tarball, source_path, quiet=True)
+def tar(tarball, source_path, tar=None):
+    if tar is None:
+        tar = 'tar'
+    sh(tar, 'czf', tarball, source_path, quiet=True)
 
-def untar(tarball, chdir=None):
+def untar(tarball, chdir=None, tar=None):
+    if tar is None:
+        tar = 'tar'
     savedir = None
     if chdir:
         savedir = os.getcwd()
         os.chdir(chdir)
     try:
-        sh('tar', 'xzf', tarball, quiet=True)
+        sh(tar, 'xzf', tarball, quiet=True)
     finally:
         if savedir:
             os.chdir(savedir)
