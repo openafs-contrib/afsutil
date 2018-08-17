@@ -65,30 +65,16 @@ def _sanity_check_dir():
         if not os.path.isdir(d):
             raise AssertionError(msg % (d))
 
-def _allow_git_clean(gitdir):
-    clean = False
+def is_git_clean_enabled(gitdir):
+    enabled = False
     try:
         output = sh('git', '--git-dir', gitdir, 'config', '--bool', '--get', 'afsutil.clean')
         if output[0] == 'true':
-            clean = True
+            enabled = True
     except CommandFailed as e:
-        if e.code == 1:
-            logger.info("To enable git clean before builds:")
-            logger.info("    git config --local afsutil.clean true");
-        else:
+        if e.code != 1:
             raise e
-    return clean
-
-def _clean(srcdir):
-    if not os.path.exists(srcdir):
-        raise AssertionError("srcdir not found: %s" % (srcdir))
-    gitdir = '%s/.git' % (srcdir)
-    if os.path.isdir(gitdir):
-        if _allow_git_clean(gitdir):
-            sh('git', '--git-dir', gitdir, '--work-tree', srcdir, 'clean', '-f', '-d', '-x', '-q', output=False)
-    else:
-        if os.path.isfile('./Makefile'): # Maybe out of tree, not in srcdir.
-            sh('make', 'clean', output=False)
+    return enabled
 
 def _detect_solariscc():
     search = [
@@ -128,7 +114,7 @@ def _setenv():
     if system == 'SunOS':
         _setenv_solaris()
 
-def _make_tarball(tarball=None):
+def _create_tarball(tarball=None):
     sysname = _detect_sysname()
     if sysname is None:
         raise AssertionError("Cannot find sysname.")
@@ -148,6 +134,15 @@ def _cfadd(cf, option):
     if option not in cf:
         cf.append(option)
 
+def _make(jobs, target):
+    uname = os.uname()[0]
+    if uname == "Linux":
+        sh('make', '-j', jobs, target, output=False)
+    elif uname == "SunOS":
+        sh('make', target, output=False)
+    else:
+        raise AssertionError("Unsupported operating system: %s" % (uname))
+
 def build(**kwargs):
     """Build the OpenAFS binaries.
 
@@ -166,29 +161,35 @@ def build(**kwargs):
     for x in xcf:
 	_cfadd(cf, x)
 
-    # Sadly, the top-level target depends on the mode we are
-    # building.
-    if target == 'all' and '--enable-transarc-paths' in cf:
-        target = 'dest'
+    if not os.path.exists(srcdir):
+        raise AssertionError("srcdir not found: %s" % (srcdir))
 
     if srcdir == '.':
         _sanity_check_dir()
+
     if clean:
-        _clean(srcdir)
+        gitdir = os.path.abspath(os.path.join(srcdir, '.git'))
+        if not os.path.isdir(gitdir):
+            logger.error("Unable to run git clean; not a git directory: '%s'", gitdir)
+            return 1
+        if not is_git_clean_enabled(gitdir):
+            logger.warning("Unable to run git clean; not enabled in the git config.")
+            logger.warning("To enable git clean before builds:")
+            logger.warning("    git config --local afsutil.clean true");
+            return 1
+        sh('git', '--git-dir', gitdir, '--work-tree', srcdir, 'clean', '-f', '-d', '-x', '-q', output=False)
+
     _setenv()
     if not os.path.exists('%s/configure' % srcdir):
         sh('/bin/sh', '-c', 'cd %s && ./regen.sh' % srcdir, output=False)
     if not os.path.exists('config.status'):
         sh('%s/configure' % srcdir, *cf, output=False)
-    _make(jobs, target)
-    if target == 'dest':
-        _make_tarball(tarball)
 
-def _make(jobs, target):
-    uname = os.uname()[0]
-    if uname == "Linux":
-        sh('make', '-j', jobs, target, output=False)
-    elif uname == "SunOS":
-        sh('make', target, output=False)
-    else:
-        raise AssertionError("Unsupported operating system: %s" % (uname))
+    # The legacy Transarc-style distribution requires a different top level target.
+    if '--enable-transarc-paths' in cf and target == 'all':
+        target = 'dest'
+
+    _make(jobs, target)
+
+    if target == 'dest':
+        _create_tarball(tarball)
