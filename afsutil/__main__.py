@@ -67,7 +67,7 @@ def check(**args):
     argument('--cf', help='configure options', default=afsutil.build.cfopts()),
     argument('--xcf', help='extra configure options', nargs='*', default=[]),
     argument('--target', help='make target', default='all'),
-    argument('--clean', help='run git clean (requires: git config afsutil.clean yes)',
+    argument('--clean', help='run git clean (requires: git config afsutil.clean true)',
                         default=False, action='store_true'),
     argument('-j', '--jobs', help='parallel build jobs', default=afsutil.system.nproc()),
     argument('--srcdir', help='source code directory', default='.'),
