@@ -25,6 +25,12 @@ setup(
     include_package_data=True,
     test_suite='test',
     zip_safe=False,
+    options = {
+        'bdist_rpm':{
+            'post_install': 'packaging/rpm/post_install.sh',
+            'post_uninstall': 'packaging/rpm/post_uninstall.sh',
+        },
+    },
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
