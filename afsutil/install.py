@@ -345,12 +345,15 @@ class Installer(object):
             sh(*args, output=False)
 
 def installer(dist='transarc', **kwargs):
+    from afsutil.transarc import TransarcInstaller
+    from afsutil.rpm import RpmInstaller
+    from afsutil.yum import YumInstaller
     if dist == 'transarc':
-        from afsutil.transarc import TransarcInstaller
         return TransarcInstaller(**kwargs)
     elif dist == 'rpm':
-        from afsutil.rpm import RpmInstaller
         return RpmInstaller(**kwargs)
+    elif dist == 'yum':
+        return YumInstaller(**kwargs)
     else:
         raise ValueError("Unsupported 'dist' option: {0}".format(dist))
 

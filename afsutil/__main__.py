@@ -125,7 +125,7 @@ def package(**args):
 @subcommand(
     argument('--chdir', help='change to directory'),
     argument('--dist', help='distribution type',
-                       choices=['transarc', 'rpm'], default='transarc'),
+                       choices=['transarc', 'rpm', 'yum'], default='transarc'),
     argument('--dir', help='distribution directory'),
     argument('--components', help='components to install',
                              metavar='<name>',
@@ -149,7 +149,7 @@ def install(**args):
 
 @subcommand(
     argument('--dist', help='distribution type',
-                       choices=['transarc', 'rpm'], default='transarc'),
+                       choices=['transarc', 'rpm', 'yum'], default='transarc'),
     argument('--components', help='components to remove',
                              metavar='<name>', nargs='+',
                              choices=['client', 'server'],
