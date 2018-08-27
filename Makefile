@@ -7,6 +7,7 @@ help:
 	@echo "  wheel          create wheel distribution"
 	@echo "  rpm            create rpm package"
 	@echo "  deb            create deb package"
+	@echo "  upload         upload packages to pypi"
 	@echo "installation:"
 	@echo "  install        install package"
 	@echo "  uninstall      uninstall package"
@@ -60,6 +61,9 @@ rpm: generated
 
 deb: generated
 	$(PYTHON) setup.py --command-packages=stdeb.command bdist_deb
+
+upload:
+	twine upload dist/*
 
 install: generated
 	$(MAKE) -f Makefile.$(INSTALL) $@
