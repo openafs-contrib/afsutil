@@ -231,7 +231,7 @@ class Keytab(object):
             'timestamp': timestamp,
             'kvno': vno8,
             'eno': eno,
-            'enctype': KRB_ENCTYPES[eno],
+            'enctype': KRB_ENCTYPES.get(eno, 'unknown'),
             'key': key,
         }
         return entry
@@ -342,7 +342,7 @@ class Keytab(object):
            'timestamp': timestamp,
            'kvno': kvno,
            'eno': eno,
-           'enctype': KRB_ENCTYPES[eno],
+           'enctype': KRB_ENCTYPES.get(eno, 'unknown'),
            'key': key,
         }
         self.entries.append(entry)
