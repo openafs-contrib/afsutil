@@ -28,7 +28,7 @@ import platform
 import glob
 
 from afsutil.system import sh, CommandFailed, tar, mkdirp
-from afsutil.misc import lists2dict
+from afsutil.misc import lists2dict, flatten
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ def build(**kwargs):
     deprecated, but old habits die hard.
     """
     cf = kwargs.get('cf', cfopts())
-    xcf = kwargs.get('xcf', [])
+    xcf = flatten(kwargs.get('xcf', []))
     target = kwargs.get('target', 'all')
     clean = kwargs.get('clean', False)
     jobs = kwargs.get('jobs', 1)
@@ -167,7 +167,8 @@ def build(**kwargs):
 
     cf = shlex.split(cf)  # Note: shlex handles quoting properly.
     for x in xcf:
-	_cfadd(cf, x)
+        for y in shlex.split(x):
+            _cfadd(cf, y)
 
     if not os.path.exists(srcdir):
         raise AssertionError("srcdir not found: %s" % (srcdir))
