@@ -138,7 +138,7 @@ def _cfadd(cf, option):
 
 def regen(srcdir='.', force=False):
     if not force and os.path.exists('%s/configure' % srcdir):
-        logger.info("configure already exists; skipping regen.sh")
+        logger.warning("Skipping regen.sh; configure already exists")
         return 0
     sh('/bin/sh', '-c', 'cd %s && ./regen.sh' % srcdir, output=False)
 
@@ -146,7 +146,7 @@ def configure(options=None, srcdir='.', force=False):
     if options is None:
         options = []
     if not force and os.path.exists('config.status'):
-        logger.info("config.status already exists; skipping configure")
+        logger.warning("Skipping configure; config.status already exists")
         return 0
     sh('%s/configure' % srcdir, *options, output=False)
 
