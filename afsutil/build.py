@@ -135,6 +135,21 @@ def _cfadd(cf, option):
     if option not in cf:
         cf.append(option)
 
+
+def regen(srcdir='.', force=False):
+    if not force and os.path.exists('%s/configure' % srcdir):
+        logger.info("configure already exists; skipping regen.sh")
+        return 0
+    sh('/bin/sh', '-c', 'cd %s && ./regen.sh' % srcdir, output=False)
+
+def configure(options=None, srcdir='.', force=False):
+    if options is None:
+        options = []
+    if not force and os.path.exists('config.status'):
+        logger.info("config.status already exists; skipping configure")
+        return 0
+    sh('%s/configure' % srcdir, *options, output=False)
+
 def make(jobs=1, target='all', program='make'):
     args = [program]
     if jobs > 1:
@@ -170,6 +185,10 @@ def build(**kwargs):
         for y in shlex.split(x):
             _cfadd(cf, y)
 
+    # The legacy Transarc-style distribution requires a different top level target.
+    if '--enable-transarc-paths' in cf and target == 'all':
+        target = 'dest'
+
     if not os.path.exists(srcdir):
         raise AssertionError("srcdir not found: %s" % (srcdir))
 
@@ -189,16 +208,9 @@ def build(**kwargs):
         sh(_git, '--git-dir', gitdir, '--work-tree', srcdir, 'clean', '-f', '-d', '-x', '-q', output=False)
 
     _setenv()
-    if not os.path.exists('%s/configure' % srcdir):
-        sh('/bin/sh', '-c', 'cd %s && ./regen.sh' % srcdir, output=False)
-    if not os.path.exists('config.status'):
-        sh('%s/configure' % srcdir, *cf, output=False)
-
-    # The legacy Transarc-style distribution requires a different top level target.
-    if '--enable-transarc-paths' in cf and target == 'all':
-        target = 'dest'
-
-    make(jobs, target, program=_make)
+    regen(srcdir=srcdir)
+    configure(options=cf, srcdir=srcdir)
+    make(jobs=jobs, target=target, program=_make)
 
     if target == 'dest':
         _create_tarball(tarball, program=_tar)
