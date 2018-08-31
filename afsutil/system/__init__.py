@@ -5,7 +5,7 @@ if _uname()[0] == "Linux":
 elif _uname()[0] == "SunOS":
     from afsutil.system import sunos as _mod
 else:
-    raise ImportError("Unsuppored uname")
+    raise ImportError("Unsupported operating system.")
 
 CommandMissing = _mod.CommandMissing
 CommandFailed = _mod.CommandFailed
