@@ -670,14 +670,13 @@ class RpmBuilder(object):
 
     def summary(self):
         """Display summary of results."""
-        summary = [
-            "Summary", "",
-            "Downloaded:", self.downloaded, "",
-            "Generated:", self.generated, "",
-            "Skipped:", self.skipped, "",
-            "Built:", self.built, "",
-            "Failed:", self.failed, "",
-        ]
+        summary = ["Summary", ""]
+        for name in ('downloaded', 'generated', 'skipped', 'built', 'failed'):
+            items = getattr(self, name)
+            if items:
+                summary.append(name.capitalize() + ':')
+                summary.append(items)
+                summary.append('')
         self.banner(summary)
 
 class MockRpmBuilder(RpmBuilder):
