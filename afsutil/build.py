@@ -174,6 +174,7 @@ def build(**kwargs):
     srcdir = kwargs.get('srcdir', '.')
     tarball = kwargs.get('tarball', None)
     paths = kwargs.get('paths', [])
+    log = kwargs.get('log', None)
 
     paths = lists2dict(paths)
     _make = paths.get('make', 'make')
@@ -205,7 +206,11 @@ def build(**kwargs):
             logger.warning("To enable git clean before builds:")
             logger.warning("    git config --local afsutil.clean true");
             return 1
-        sh(_git, '--git-dir', gitdir, '--work-tree', srcdir, 'clean', '-f', '-d', '-x', '-q', output=False)
+        args = [_git, '--git-dir', gitdir, '--work-tree', srcdir, 'clean', '-f', '-d', '-x', '-q']
+        if log:
+            args.append('--exclude')
+            args.append(log)
+        sh(*args, output=False)
 
     _setenv()
     regen(srcdir=srcdir)
