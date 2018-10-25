@@ -58,6 +58,7 @@ config = ConfigParser()
 config.read([
     '/etc/{0}.cfg'.format(progname),
     os.path.expanduser('~/.{0}.cfg'.format(progname)),
+    '.git/{0}.cfg'.format(progname),
 ])
 
 def _get_config(section, option, default, as_boolean):

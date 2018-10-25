@@ -103,18 +103,18 @@ To mount the top-level volumes after the client is running::
 Configuration files
 -------------------
 
-All of the command line values may be set in a configuration file.  **afsutil**
-will attempt to load the configuration from `/etc/afsutil.cfg` and then
-`$HOME/.afsutil.cfg`.  Values specified on the command line will override the
-configuration file values.
+All of the command line values may be set in a configuration file.  Place
+global configuration in `/etc/afsutil.cfg`, per user options in
+`~/.afsutil.cfg`, and per project options in `.git/afsutil.cfg`. Use command
+line options to override configuration options.
 
-The **afsutil** configuration files are in ini-style format.  The sections of
-the configuration file correspond to the subcommand names, such as, `build`,
-`install`, `newcell`. The options within each section correspond to the command
+The **afsutil** configuration files are ini-style format.  The sections of the
+configuration file correspond to the subcommand names, e.g., `build`,
+`install`, `newcell`. Options within each section correspond to the command
 line option names.
 
 Some subcommands, such as `install` and `newcell` have options like `--options`
-and `--paths` which consist of multiple name/values pairs. These are
+and `--paths`, which consist of multiple name/values pairs. These are
 represented in the configuration file as subsection in the form
 `[<subcommand>.<option>]`.
 
