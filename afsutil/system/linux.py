@@ -86,7 +86,7 @@ def afs_umount():
 def network_interfaces():
     """Return list of non-loopback network interfaces."""
     addrs = []
-    output = sh('/sbin/ip', '-oneline', '-family', 'inet', 'addr', 'show')
+    output = sh('/sbin/ip', '-oneline', '-family', 'inet', 'addr', 'show', quiet=True)
     for line in output:
         match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', line)
         if match:
