@@ -288,6 +288,7 @@ class RpmBuilder(object):
         writefile(dst,
             readfile(src).\
                replace('@VERSION@', version).\
+               replace('@PACKAGE_VERSION@', version).\
                replace('@LINUX_PKGVER@', linux_pkgver).\
                replace('@LINUX_PKGREL@', linux_pkgrel))
         self.generated.append(dst)
