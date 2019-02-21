@@ -37,8 +37,6 @@ def cfopts():
     options = [
         '--enable-debug',
         '--enable-debug-kernel',
-        '--disable-optimize',
-        '--disable-optimize-kernel',
         '--without-dot',
         '--enable-transarc-paths',
     ]
