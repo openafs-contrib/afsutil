@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2018 Sine Nomine Associates
+# Copyright (c) 2014-2019 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -84,8 +84,8 @@ def writefile(path, contents):
 
 class RpmBuilder(object):
     def __init__(self, srcdir=None, pkgdir=None, topdir=None, dstdir=None,
-                 version=None, arch=None, spec=None, csdb=None, clobber=False,
-                 quiet=False, verbose=False,
+                 version=None, arch=None, spec=None, csdb=None, srpm=None,
+                 clobber=False, quiet=False, verbose=False,
                  with_=None, without=None, **kwargs):
         """Initialize the RpmBuilder object
 
@@ -96,6 +96,7 @@ class RpmBuilder(object):
         version: target version number (default: check)
         arch:    target architecture (default: check)
         spec:    custom rpmbuild specfile (default: {pkdir}/openafs.spec.in}
+        srpm:    path of a prebuilt src.rpm file
         clobber: build and overwrite existing kmod-openafs rpms
         quiet:   less output
         verbose: more output
@@ -135,7 +136,7 @@ class RpmBuilder(object):
         self.spec = None
         self.csdb = None
         self.sources = {}
-        self.srpm = None
+        self.srpm = srpm
         self.downloaded = []
         self.generated = []
         self.skipped = []
@@ -841,6 +842,7 @@ def package(**kwargs):
     build: what to build: 'all', 'srpm', 'userspace', 'kmods' (default: 'all')
     spec: custom rpmbuild specfile (default: in-tree openafs.spec.in)
     csdb: custom CellServDB file (default: download from url in specfile)
+    srpm: path to a prebuilt src.rpm (default: build from sources)
     srcdir: path of the checked out source tree (default: .)
     pkgdir: path of the packaging files (default: {srcdir}/src/packaging/RedHat
     topdir: path of the rpmbuild directories (default: {srcdir}/packaging/rpmbuild)

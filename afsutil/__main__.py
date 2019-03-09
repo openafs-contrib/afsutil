@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2017 Sine Nomine Associates
+# Copyright (c) 2014-2019 Sine Nomine Associates
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -102,6 +102,7 @@ def reload(**args):
                         choices=['all','sources','srpm','userspace','kmods']),
     argument('--csdb', help='CellServDB file path (default: download)', metavar='<csdb>'),
     argument('--spec', help='spec file path', metavar='<spec>'),
+    argument('--srpm', help='prebuilt srpm file path', metavar='<spec>'),
     argument('--version', help='target version number'),
     argument('--arch', help='target architecture, e.g. x86_64', metavar='<arch>'),
     argument('-k','--kernel-version', help='linux kernel versions (default: check)',
