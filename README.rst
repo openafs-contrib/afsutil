@@ -41,6 +41,18 @@ To build OpenAFS from sources::
     $ cd openafs
     $ afsutil build
 
+To build RPM packages from an arbitrary git checkout (on an rpm-based system)::
+
+    $ git clone git://git.openafs.org/openafs.git
+    $ cd openafs
+    $ git checkout <commit-ish>
+    $ afsutil package --version=<X.Y.Z-etc>
+
+The `afsutil package` command will build packages for the userspace and kernel
+modules by default. See the `--build` option to build these separately. The
+`afsutil package` command also supports the Fedora `mock` build system, which
+is useful to build kernel modules for a large variety of kernel versions.
+
 To install legacy "Transarc-style" binaries::
 
     $ sudo afsutil install \
