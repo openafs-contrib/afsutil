@@ -682,7 +682,7 @@ class RpmBuilder(object):
         self.banner(summary)
 
 class MockRpmBuilder(RpmBuilder):
-    def __init__(self, chroot, autoclean=True, khrepo='kernel-devel', **kwargs):
+    def __init__(self, chroot, autoclean=True, **kwargs):
         """Initialize the MockRpmBuilder object.
 
         chroot: name of the chroot (mock --root)
@@ -690,7 +690,6 @@ class MockRpmBuilder(RpmBuilder):
         if chroot is None:
             raise ValueError("chroot argument is required.")
         self.chroot = chroot
-        self.khrepo = khrepo # may be None
         self.autoclean = autoclean
         self.inited = False
         RpmBuilder.__init__(self, **kwargs)
@@ -716,19 +715,14 @@ class MockRpmBuilder(RpmBuilder):
             self.inited = False
 
     def find_kversions(self):
-        """List the linux kernel versions of the available kernel header packages in the chroot."""
+        """List the linux kernel versions of the kernel-devel packages in the chroot."""
         self.init_chroot()
         self.mock('--install', 'yum-utils', '--quiet', output=False) # for repoquery
         cmd = ['repoquery']
-        if self.khrepo:
-            cmd.append('--repoid={0}'.format(self.khrepo))
         cmd.append('--show-dupes')
         cmd.append('--queryformat="%{VERSION}-%{RELEASE}"')
         cmd.append('kernel-devel')
-        if self.khrepo:
-            logger.debug('Searching for kernel-devel in repo %s.', self.khrepo)
-        else:
-            logger.debug('Searching for kernel-devel in enabled repos.')
+        logger.debug('Searching for kernel-devel in enabled repos.')
         output = self.mock('--quiet', '--chroot', ' '.join(cmd), quiet=True)
         versions = []
         for line in output:
@@ -798,8 +792,9 @@ class MockRpmBuilder(RpmBuilder):
         kversion: target linux kernel version, e.g., 3.10.0-514.16.1.el7
                   defaults to the currently running linux kernel version.
 
-        A kernel-devel package for `kversion` must been installed to supply the
-        required linux kernel header files.
+        A kernel-devel package for `kversion` must be available in the
+        chroot's repos.  Run find_kversions() first to find which kernel
+        versions are currently available.
         """
         if srpm is None:
             if self.srpm is None:
@@ -838,6 +833,7 @@ def package(**kwargs):
     """Build OpenAFS rpms.
 
     keyword arguments:
+    mock: use mock
     chroot: name of the mock chroot (default: dont use mock)
     build: what to build: 'all', 'srpm', 'userspace', 'kmods' (default: 'all')
     spec: custom rpmbuild specfile (default: in-tree openafs.spec.in)
@@ -851,16 +847,17 @@ def package(**kwargs):
     clobber: build and overwrite existing kmod-openafs rpms
     quiet:   less output
     """
-    # Note: It could be possible no kmods need to be built, in which case it it
+    # Note: It could be possible no kmods need to be built, in which case it is
     # not neccessary to build the srpm. So we defer prepare_sources until we
     # know it is needed.
+    mock = kwargs.pop('mock', False)
     chroot = kwargs.pop('chroot', None)
     build = kwargs.pop('build', 'all')
     kversions = flatten(kwargs.pop('kversions', None)) # argparse gives a list of lists
     list_kversions = kwargs.get('list_kversions')
     dstdir = kwargs.get('dstdir')
 
-    if chroot:
+    if mock:
         b = MockRpmBuilder(chroot, **kwargs)
     else:
         b = RpmBuilder(**kwargs)
