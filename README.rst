@@ -32,6 +32,25 @@ Command line interface
       mtroot       Mount root volumes in a new cell
       addfs        Add a new fileserver to a cell
 
+
+Installation
+------------
+
+To install with `yum`::
+
+    $ sudo yum install https://download.sinenomine.net/openafs/repo/sna-openafs-release-latest.noarch.rpm
+    $ sudo yum install afsutil
+
+To install with `pip`::
+
+    $ pip install afsutil
+
+To install from source::
+
+    $ git clone https://github.com/openafs-contrib/afsutil
+    $ make install-user
+
+
 Examples
 --------
 
@@ -44,16 +63,35 @@ To build OpenAFS from sources::
 
 To build RPM packages from an arbitrary git checkout (on an rpm-based system)::
 
+    $ sudo afsutil getdeps
     $ git clone git://git.openafs.org/openafs.git
     $ cd openafs
     $ git checkout <commit-ish>
-    $ sudo afstuil getdeps
-    $ afsutil package --version=<X.Y.Zetc>
+    $ afsutil package [--version=<X.Y.Z>]
+    $ ls ./package/rpmbuild/RPMS
 
 The `afsutil package` command will build packages for the userspace and kernel
-modules by default. See the `--build` option to build these separately. The
-`afsutil package` command also supports the Fedora `mock` build system, which
+modules by default. See the `--build` option to build these separately.
+
+The `afsutil package` command also supports the Fedora `mock` build system, which
 is useful to build kernel modules for a large variety of kernel versions.
+
+To build RPM packages from a git checkout with `mock`, including kernel
+modules (kmods) for each kernel version found in the yum repositories.
+
+   # Install mock.
+   $ sudo yum install mock
+   $ sudo usermod -a -G mock $USER
+   $ newgrp - mock
+
+   # Install packages needed to build the OpenAFS SRPM.
+   $ sudo yum install git libtool bzip2
+
+   # Checkout and then build packages.
+   $ git clone git://git.openafs.org/openafs.git
+   $ git checkout <commit-ish>
+   $ afsutil package --mock   # This may take some time.
+
 
 To install legacy "Transarc-style" binaries::
 
