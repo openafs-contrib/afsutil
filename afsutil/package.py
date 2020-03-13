@@ -192,11 +192,19 @@ class RpmBuilder(object):
         else:
             logger.debug("getting OpenAFS version number with git describe.")
             output = self.git('describe', '--abbrev=4', 'HEAD')
-            if output:
-                version = output[0]
+            if not output:
+                raise RpmBuilderError("git described failed.")
+            desc = output[0]
+            logger.debug("git describe={0}".format(desc))
+            if desc.startswith('BP-openafs-'): # master branch
+                version = re.sub(r'^BP-openafs-[^-]+-[^-]+', '99.99.99', desc)
+            elif desc.startswith('openafs-'):
+                version = re.sub(r'^openafs-[^-]*-?', '', desc).replace('_', '.')
+            else:
+                version = desc
         if not version:
             raise RpmBuilderError("Failed to find version number.")
-        self.version = re.sub(r'^openafs-[^-]*-', '', version).replace('_', '.')
+        self.version = version
         logger.info("OpenAFS version is {0}".format(self.version))
         return self.version
 
@@ -227,13 +235,17 @@ class RpmBuilder(object):
             linux_pkgver = m3.group(1)
             linux_pkgrel = "{0}.{1}".format(m3.group(2),m3.group(3))
         elif m4:
-            linux_pkgver = m4.group(1)
+            linux_pkgver = m4.group(1).replace('-', '')
             linux_pkgrel = "1.2.{0}.{1}".format(m4.group(3), m4.group(2))
         else:
             linux_pkgver = version # standard release
             linux_pkgrel = "1"     # increment when repackaging this version
-        logger.info("Linux version is {0}".format(linux_pkgver))
-        logger.info("Linux release is {0}".format(linux_pkgrel))
+        if '-' in linux_pkgver:
+            raise ValueError('Version cannot contain "-" character; {0}'.format(version))
+        if '-' in linux_pkgrel:
+            raise ValueError('Release cannot contain "-" character; {0}'.format(version))
+        logger.info("Package version is {0}".format(linux_pkgver))
+        logger.info("Package release is {0}".format(linux_pkgrel))
         return (linux_pkgver, linux_pkgrel)
 
     def current_kversion(self):
