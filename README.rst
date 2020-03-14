@@ -66,8 +66,8 @@ To build RPM packages from an arbitrary git checkout (on an rpm-based system)::
     $ sudo afsutil getdeps
     $ git clone git://git.openafs.org/openafs.git
     $ cd openafs
-    $ git checkout <commit-ish>
-    $ afsutil package [--version=<X.Y.Z>]
+    $ git checkout <branch-or-tag>
+    $ afsutil package
     $ ls ./package/rpmbuild/RPMS
 
 The `afsutil package` command will build packages for the userspace and kernel
@@ -77,7 +77,7 @@ The `afsutil package` command also supports the Fedora `mock` build system, whic
 is useful to build kernel modules for a large variety of kernel versions.
 
 To build RPM packages from a git checkout with `mock`, including kernel
-modules (kmods) for each kernel version found in the yum repositories.
+modules (kmods) for each kernel version found in the yum repositories::
 
    # Install mock.
    $ sudo yum install mock
@@ -89,8 +89,8 @@ modules (kmods) for each kernel version found in the yum repositories.
 
    # Checkout and then build packages.
    $ git clone git://git.openafs.org/openafs.git
-   $ git checkout <commit-ish>
-   $ afsutil package --mock   # This may take some time.
+   $ git checkout <branch-or-tag>
+   $ afsutil package --mock   # This will take some time.
 
 
 To install legacy "Transarc-style" binaries::
