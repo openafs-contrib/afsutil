@@ -197,7 +197,7 @@ class RpmBuilder(object):
             desc = output[0]
             logger.debug("git describe={0}".format(desc))
             if desc.startswith('BP-openafs-'): # master branch
-                version = re.sub(r'^BP-openafs-[^-]+-[^-]+', '99.99.99', desc)
+                version = re.sub(r'^BP-openafs-[^-]+-[^-]+', '0.0.0', desc)
             elif desc.startswith('openafs-'):
                 version = re.sub(r'^openafs-[^-]*-?', '', desc).replace('_', '.')
             else:
