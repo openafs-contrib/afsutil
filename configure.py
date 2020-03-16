@@ -2,14 +2,15 @@ from __future__ import print_function
 import os
 import re
 
-def which(program):
+def which(*alternatives):
     """Find a program in the PATH or return 'missing'."""
-    for path in os.environ['PATH'].split(os.pathsep):
-        path = os.path.join(path.strip('"'), program)
-        if os.access(path, os.X_OK):
-            if ' ' in path:
-                path = '"{0}"'.format(path)
-            return path
+    for program in alternatives:
+        for path in os.environ['PATH'].split(os.pathsep):
+            path = os.path.join(path.strip('"'), program)
+            if os.access(path, os.X_OK):
+                if ' ' in path:
+                    path = '"{0}"'.format(path)
+                return path
     return 'missing'
 
 def name():
@@ -27,9 +28,9 @@ def version():
 
 NAME = name()
 VERSION = version()
-PYTHON = which('python')
+PYTHON = which('python', 'python2')
 PYFLAKES = which('pyflakes')
-PIP = which('pip')
+PIP = which('pip', 'pip2')
 INSTALL = 'pip' if PIP != 'missing' else 'setup'
 
 print("""\

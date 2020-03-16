@@ -48,6 +48,7 @@ To install with `pip`::
 To install from source::
 
     $ git clone https://github.com/openafs-contrib/afsutil
+    $ python configure.py >Makefile.config
     $ make install-user
 
 
