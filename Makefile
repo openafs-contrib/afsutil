@@ -55,7 +55,7 @@ wheel: generated
 	$(PYTHON) setup.py bdist_wheel
 
 rpm: generated
-	$(PYTHON) setup.py bdist_rpm --python=$(PYTHON)
+	$(PYTHON) setup.py bdist_rpm --python=$(PYTHON) --release=1$(RPM_DIST)
 
 deb: generated
 	$(PYTHON) setup.py --command-packages=stdeb.command bdist_deb

@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import platform
 
 def which(*alternatives):
     """Find a program in the PATH or return 'missing'."""
@@ -26,6 +27,15 @@ def version():
     version = os.popen('git describe').read() or '0.0.0'
     return version.lstrip('v').strip()
 
+def rpm_dist():
+    """Determine the rpm dist component for rhel/centos packaging."""
+    name, version, id_ = platform.dist()
+    if name in ('redhat', 'centos'):
+        m = re.match(r'(\d+)\.', version)
+        if m:
+            return '.el%d' % int(m.group(1))
+    return ''
+
 def configure():
     with open('Makefile.config', 'w') as cf:
         cf.write("NAME=%s\n" % name())
@@ -36,6 +46,7 @@ def configure():
         cf.write("PIP=%s\n" % pip)
         install = 'setup' if pip == 'missing' else 'pip'
         cf.write("INSTALL=%s\n" % install)
+        cf.write("RPM_DIST=%s\n" % rpm_dist())
 
 if __name__ == '__main__':
     configure()
