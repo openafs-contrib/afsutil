@@ -36,21 +36,32 @@ Command line interface
 Installation
 ------------
 
-To install with `yum`::
+Install with `yum`::
 
     $ sudo yum install https://download.sinenomine.net/openafs/repo/sna-openafs-release-latest.noarch.rpm
     $ sudo yum install afsutil
 
-To install with `pip`::
+Install with `pip`::
 
-    $ pip install afsutil
+    $ sudo pip install afsutil
+ 
+Install with `virtualenv`::
 
-To install from source::
+    $ python -m virtualenv ~/.virtualenv/afsutil
+    $ . ~/.virtualenv/afsutil/bin/activate
+    (afsutil) $ pip install afsutil
+    (afsutil) $ deactivate
+    $ sudo ln -s /home/$USER/.virtualenv/afsutil/bin/afsutil /usr/bin/afsutil
+    
+    $ afsutil version
+    $ sudo afsutil version
+
+Install from source::
 
     $ git clone https://github.com/openafs-contrib/afsutil
-    $ python configure.py >Makefile.config
-    $ make install-user
-
+    $ cd afsutil
+    $ <python-interpreter> configure.py  # i.e. python, python2
+    $ sudo make install    # or make install-user for local install
 
 Examples
 --------
