@@ -22,9 +22,7 @@ help:
 	@echo "  clean          delete generated files"
 	@echo "  distclean      delete generated and config files"
 
-Makefile.config: configure.py
-	python configure.py > $@
-
+# Run "<python-interpreter> configure.py" to create this file before running make.
 include Makefile.config
 
 $(NAME)/__version__.py:

@@ -1,4 +1,4 @@
-from __future__ import print_function
+import sys
 import os
 import re
 
@@ -26,18 +26,16 @@ def version():
     version = os.popen('git describe').read() or '0.0.0'
     return version.lstrip('v').strip()
 
-NAME = name()
-VERSION = version()
-PYTHON = which('python', 'python2')
-PYFLAKES = which('pyflakes')
-PIP = which('pip', 'pip2')
-INSTALL = 'pip' if PIP != 'missing' else 'setup'
+def configure():
+    with open('Makefile.config', 'w') as cf:
+        cf.write("NAME=%s\n" % name())
+        cf.write("VERSION=%s\n" % version())
+        cf.write("PYTHON=%s\n" % sys.executable)
+        cf.write("PYFLAKES=%s\n" % which('pyflakes'))
+        pip = which('pip', 'pip2')
+        cf.write("PIP=%s\n" % pip)
+        install = 'setup' if pip == 'missing' else 'pip'
+        cf.write("INSTALL=%s\n" % install)
 
-print("""\
-NAME={NAME}
-VERSION={VERSION}
-PIP={PIP}
-PYTHON={PYTHON}
-PYFLAKES={PYFLAKES}
-INSTALL={INSTALL}\
-""".format(**locals()))
+if __name__ == '__main__':
+    configure()
