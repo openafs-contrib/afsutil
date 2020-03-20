@@ -233,10 +233,10 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
             zypper_install(packages, dryrun)
         elif dist == 'fedora' and release < 22:
             packages = [
-                'elfutils-devel',
                 'autoconf',
                 'automake',
                 'bison',
+                'elfutils-devel',
                 'flex',
                 'fuse-devel',
                 'gcc',
@@ -251,6 +251,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'perl-Test-Simple',
                 'redhat-rpm-config',
                 'rpm-build',
+                'swig',
                 'wget',
             ]
             if not skip_headers:
@@ -276,6 +277,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'perl-Test-Simple',
                 'redhat-rpm-config',
                 'rpm-build',
+                'swig',
                 'wget',
             ]
             if not skip_headers:
