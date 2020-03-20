@@ -177,6 +177,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'libpam0g-dev',
                 'libtool',
                 'libxml2-utils',
+                'make',
                 'perl',
                 'pkg-config',
                 'xsltproc',
@@ -189,6 +190,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'autoconf',
                 'automake',
                 'bison',
+                'elfutils-devel',
                 'flex',
                 'fuse-devel',
                 'gcc',
@@ -207,7 +209,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'wget',
             ]
             if not skip_headers:
-                packages.append('kernel-devel-{0}'.format(platform.release()))
+                packages.append('kernel-devel-uname-r == {0}'.format(platform.release()))
             yum_install(packages, dryrun)
         elif dist == 'suse':
             packages = [
@@ -231,6 +233,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
             zypper_install(packages, dryrun)
         elif dist == 'fedora' and release < 22:
             packages = [
+                'elfutils-devel',
                 'autoconf',
                 'automake',
                 'bison',
@@ -251,13 +254,14 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'wget',
             ]
             if not skip_headers:
-                packages.append('kernel-devel-{0}'.format(platform.release()))
+                packages.append('kernel-devel-uname-r == {0}'.format(platform.release()))
             yum_install(packages, dryrun)
         elif dist == 'fedora':
             packages = [
                 'autoconf',
                 'automake',
                 'bison',
+                'elfutils-devel',
                 'flex',
                 'fuse-devel',
                 'gcc',
@@ -275,7 +279,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'wget',
             ]
             if not skip_headers:
-                packages.append('kernel-devel-{0}'.format(platform.release()))
+                packages.append('kernel-devel-uname-r == {0}'.format(platform.release()))
             dnf_install(packages, dryrun)
         else:
             raise Unsupported("Linux dist '{0}'.".format(dist))
