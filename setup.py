@@ -22,6 +22,9 @@ setup(
     author_email='mmeffie@sinenomine.net',
     url='https://github.com/openafs-contrib/afsutil',
     license='BSD',
+    install_requires=[
+        'six',
+    ],
     packages=[
         'afsutil',
         'afsutil.system',

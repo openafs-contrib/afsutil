@@ -33,6 +33,7 @@ import logging
 import os
 import re
 import socket
+import six
 
 import afsutil.system
 import afsutil.keytab
@@ -201,13 +202,13 @@ class Host(object):
         hosts : a sequence of hostname strings or Host objects
         """
         assert hosts is not None
-        assert not isinstance(hosts, basestring) # expect a list or tuple
+        assert not isinstance(hosts, six.string_types) # expect a list or tuple
 
         hostnames = set()
         for h in hosts:
             if isinstance(h, Host):
                 hostnames.add(h.hostname)
-            elif isinstance(h, basestring):
+            elif isinstance(h, six.string_types):
                 hostnames.add(h)
             else:
                 raise AssertionError("Expected a Host object or string.")
@@ -361,12 +362,12 @@ class Cell(object):
         which will house the rw root volumes.
         """
         # Some sanity checking.
-        assert cell is not None and isinstance(cell, basestring)  # expect a string
-        assert db is None or not isinstance(db, basestring) # expect a list or tuple
-        assert fs is None or not isinstance(fs, basestring) # expect a list or tuple
-        assert admins is None or not isinstance(admins, basestring) # expect a list or tuple
-        assert options is None or not isinstance(options, basestring) # expect a list or dict
-        assert paths is None or not isinstance(options, basestring) # expect a list or dict
+        assert cell is not None and isinstance(cell, six.string_types)  # expect a string
+        assert db is None or not isinstance(db, six.string_types) # expect a list or tuple
+        assert fs is None or not isinstance(fs, six.string_types) # expect a list or tuple
+        assert admins is None or not isinstance(admins, six.string_types) # expect a list or tuple
+        assert options is None or not isinstance(options, six.string_types) # expect a list or dict
+        assert paths is None or not isinstance(options, six.string_types) # expect a list or dict
 
         # Defaults.
         hostname = socket.gethostname()
@@ -663,7 +664,7 @@ class Cell(object):
         cell name, the CellServDB configuration, add the superuser names,
         and then create the bosserver configuration to run the fileserver.
         """
-        if isinstance(host, basestring):
+        if isinstance(host, six.string_types):
             host = Host(host, options=self.options)
         logger.info("Adding fileserver %s", host.hostname)
         host.setcellname(self.cell)

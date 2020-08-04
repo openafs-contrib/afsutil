@@ -24,6 +24,7 @@ import logging
 import os
 import subprocess
 import sys
+import six
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ def sh(*args, **kwargs):
     # Fixup the argument list for Popen.
     # 1. Create a tuple if just one arg was given.
     # 2. Convert numeric args to strings.
-    if isinstance(args, basestring):
+    if isinstance(args, six.string_types):
         args = (args)
     args = [arg.__str__() for arg in args]
 
@@ -163,7 +164,7 @@ def which(program, extra_paths=None, raise_errors=False):
     extra_paths: list of paths to search in addition to PATH
     raise_errors: raise an exception if not found (default: False)
     """
-    if not isinstance(program, basestring):
+    if not isinstance(program, six.string_types):
         raise ValueError("which() requires a string argument")
     dirname,basename = os.path.split(program)
     if dirname:
