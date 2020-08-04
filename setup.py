@@ -24,6 +24,7 @@ setup(
     license='BSD',
     install_requires=[
         'six',
+        'sh',
     ],
     packages=[
         'afsutil',

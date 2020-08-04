@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import six
+import sh
 
 logger = logging.getLogger(__name__)
 
@@ -218,10 +219,11 @@ def path_join(a, *p):
 
 def nproc():
     """Return the number of processing units."""
-    nproc = which('nproc')
-    if nproc is None:
+    try:
+        from sh import nproc
+        return int(six.ensure_text(nproc().stdout))
+    except:
         return 1  # default
-    return int(xsh('nproc')[0])
 
 def mkdirp(path):
     """Make a directory with parents."""
