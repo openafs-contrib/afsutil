@@ -474,7 +474,7 @@ class RpmBuilder(object):
                 mkdirp(os.path.dirname(dst))
                 shutil.copy(src, dst)
                 if dst.endswith(".sh"):
-                    os.chmod(dst, 0755)
+                    os.chmod(dst, 0o755)
         self.sources['scripts'] = True
 
     def prepare_sources_tarballs(self):

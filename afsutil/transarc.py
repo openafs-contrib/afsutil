@@ -83,7 +83,7 @@ class TransarcClientSetup(object):
         logger.info("Installing afsd from '%s' to '%s'.", src, dst)
         mkdirp(dst)
         shutil.copy2(src, dst)
-        os.chmod(dst, 0755)
+        os.chmod(dst, 0o755)
 
 class LinuxClientSetup(TransarcClientSetup):
     """Linux specific setup functions."""
@@ -101,7 +101,7 @@ class LinuxClientSetup(TransarcClientSetup):
         logger.info("Installing client init script from to '%s'.", dst)
         with open(dst, 'w') as f:
             f.write(text)
-        os.chmod(dst, 0755)
+        os.chmod(dst, 0o755)
         # Set afsd options.
         dst = path_join(SYSCONFIG, "openafs-client")
         logger.info("Writing afsd startup options to file '%s'." % (dst))
@@ -166,7 +166,7 @@ class SolarisClientSetup(TransarcClientSetup):
         logger.info("Installing client init script to '%s'.", dst)
         with open(dst, 'w') as f:
             f.write(text)
-        os.chmod(dst, 0755)
+        os.chmod(dst, 0o755)
         # Set afsd options.
         config = '/usr/vice/etc/config'
         dst = path_join(config, 'afsd.options')
@@ -294,7 +294,7 @@ class TransarcInstaller(Installer):
             raise AssertionError("Refusing to overwrite '%s'.", dst)
         with open(dst, 'w') as f:
             f.write(text)
-        os.chmod(dst, 0755)
+        os.chmod(dst, 0o755)
         mkdirp("/var/lock/subsys/")  # needed by the init script
         # Set the bosserver command line options.
         dst = path_join(SYSCONFIG, "openafs-server")

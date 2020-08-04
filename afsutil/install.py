@@ -218,7 +218,7 @@ class Installer(object):
         # sure to remove the symlinks so we do not clobber the server
         # configuration.
         mkdirp(path)
-        os.chmod(path, 0755)  # Make the bosserver happy.
+        os.chmod(path, 0o755)  # Make the bosserver happy.
         cellservdb = os.path.join(path, "CellServDB%s" % (ext))
         thiscell = os.path.join(path, "ThisCell")
         if os.path.islink(cellservdb):

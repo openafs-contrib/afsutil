@@ -453,7 +453,7 @@ class Keytab(object):
             os.remove(dst)
         logger.info("Copying rxkad-k5 keytab %s to %s.", src, dst)
         shutil.copyfile(src, dst)
-        os.chmod(dst, 0600)
+        os.chmod(dst, 0o600)
 
     def _set_service_key_extended(self, principal):
         """Set the non-DES service key."""
