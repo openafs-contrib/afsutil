@@ -23,8 +23,13 @@
 import logging
 import os
 import platform
-import urllib2
 import tempfile
+
+try:
+    from urllib.request import urlopen  # PY3
+    from urllib.error import HTTPError
+except ImportError:
+    from urllib2 import urlopen, HTTPError # PY2
 
 from afsutil.system import sh, CommandFailed
 
@@ -79,7 +84,7 @@ def lookup_solarisstudio(creds='/root/creds',
     def download(baseurl, filename, path):
         url = os.path.join(baseurl, filename)
         dst = os.path.join(path, filename)
-        rsp = urllib2.urlopen(url)
+        rsp = urlopen(url)
         logger.info("Downloading '%s' to '%s'.", url, dst)
         with open(dst, 'wb') as f:
             f.write(rsp.read())
@@ -98,7 +103,7 @@ def lookup_solarisstudio(creds='/root/creds',
             path = tmpdir = tempfile.mkdtemp()
             download(creds, key, tmpdir)
             download(creds, cert, tmpdir)
-        except urllib2.HTTPError as e:
+        except HTTPError as e:
             logger.error("Unable to download files from url '%s', %s'." % (creds, e))
             return None
         finally:

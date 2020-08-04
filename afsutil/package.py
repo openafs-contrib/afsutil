@@ -60,10 +60,15 @@ from __future__ import print_function
 import os
 import sys
 import re
-import urllib2
 import logging
 import shutil
 import glob
+
+try:
+    from urllib.request import urlopen  # PY3
+except ImportError:
+    from urllib2 import urlopen # PY2
+
 from afsutil.system import sh, mkdirp, which, CommandFailed
 from afsutil.misc import flatten, trim
 
@@ -362,7 +367,7 @@ class RpmBuilder(object):
         """Helper to download the CellServDB file to SOURCES."""
         dst = os.path.join(self.topdir, 'SOURCES', os.path.basename(url))
         logger.info("Downloading CellServDB from '{0}' to {1}'".format(url, dst))
-        src = urllib2.urlopen(url)
+        src = urlopen(url)
         mkdirp(os.path.dirname(dst))
         writefile(dst, src.read())
         self.downloaded.append(dst)
