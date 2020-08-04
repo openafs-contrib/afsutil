@@ -87,6 +87,9 @@ def lookup_solarisstudio(creds='/root/creds',
     def normalize(s):
         return [int(x) for x in s.split('.')]
 
+    def cmp(a, b):
+        return (a > b) - (a < b)
+
     def compare_versions(a, b):
         return cmp(normalize(a), normalize(b))
 
