@@ -24,14 +24,14 @@ import logging
 import os
 import glob
 
-from afsutil.system import sh
+from afsutil.system import xsh
 from afsutil.install import Installer
 
 logger = logging.getLogger(__name__)
 
 def rpm(*args):
     """Helper to run the rpm command."""
-    return sh('rpm', *args, quiet=True)
+    return xsh('rpm', *args, quiet=True)
 
 class RpmInstaller(Installer):
     """Helper to install and remove OpenAFS RPMs."""

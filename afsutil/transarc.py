@@ -31,7 +31,7 @@ import afsutil
 from afsutil.install import Installer, \
                             copy_files, remove_file, remove_files
 
-from afsutil.system import sh, directory_should_exist, \
+from afsutil.system import xsh, directory_should_exist, \
                            configure_dynamic_linker, \
                            is_loaded, is_running, mkdirp, path_join, \
                            untar
@@ -117,7 +117,7 @@ class LinuxClientSetup(TransarcClientSetup):
         logger.info("Installing kernel module from '%s' to '%s'.", src, dst)
         mkdirp(os.path.dirname(dst))
         shutil.copy2(src, dst)
-        sh('/sbin/depmod', '-a')
+        xsh('/sbin/depmod', '-a')
 
     def install_driver(self, dest, force=False):
         #
@@ -186,7 +186,7 @@ class SolarisClientSetup(TransarcClientSetup):
             raise AssertionError("Unsupported operating system: %s" % (osrel))
 
     def _afs_driver_510(self):
-        output = sh('/bin/isalist')[0]
+        output = xsh('/bin/isalist')[0]
         if 'amd64' in output:
             driver = '/kernel/fs/amd64/afs'
         elif 'sparcv9' in output:
@@ -196,7 +196,7 @@ class SolarisClientSetup(TransarcClientSetup):
         return driver
 
     def _afs_driver_511(self):
-        output = sh('/bin/isalist')[0]
+        output = xsh('/bin/isalist')[0]
         if 'amd64' in output:
             driver = '/kernel/drv/amd64/afs'
         elif 'sparcv9' in output:

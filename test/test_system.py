@@ -29,7 +29,7 @@ from afsutil.system import directory_should_not_exist
 from afsutil.system import is_loaded
 from afsutil.system import is_running
 from afsutil.system import network_interfaces
-from afsutil.system import sh
+from afsutil.system import xsh
 from afsutil.system import symlink
 from afsutil.system import touch
 from afsutil.system import which
@@ -38,7 +38,7 @@ class SystemTest(unittest.TestCase):
 
     def test_sh(self):
         self.assertIsNotNone(sh("/bin/ls", "/bin"))
-        self.assertIn("sh", sh("/bin/ls", "/bin"))
+        self.assertIn("sh", xsh("/bin/ls", "/bin"))
 
     def test_sh_fail(self):
         self.assertRaises(CommandFailed, sh, "false")

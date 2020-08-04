@@ -31,7 +31,7 @@ try:
 except ImportError:
     from urllib2 import urlopen, HTTPError # PY2
 
-from afsutil.system import sh, CommandFailed
+from afsutil.system import xsh, CommandFailed
 
 logger = logging.getLogger(__name__)
 
@@ -39,26 +39,26 @@ class Unsupported(Exception):
     pass
 
 def apt_get_install(packages, dryrun=False):
-    sh('apt-get', '-y', 'install', *packages, dryrun=dryrun, output=False)
+    xsh('apt-get', '-y', 'install', *packages, dryrun=dryrun, output=False)
 
 def yum_install(packages, dryrun=False):
-    sh('yum', 'install', '-y', *packages, dryrun=dryrun, output=False)
+    xsh('yum', 'install', '-y', *packages, dryrun=dryrun, output=False)
 
 def dnf_install(packages, dryrun=False):
-    sh('dnf', 'install', '-y', *packages, dryrun=dryrun, output=False)
+    xsh('dnf', 'install', '-y', *packages, dryrun=dryrun, output=False)
 
 def zypper_install(packages, dryrun=False):
-    sh('zypper', 'install', '-y', *packages, dryrun=dryrun, output=False)
+    xsh('zypper', 'install', '-y', *packages, dryrun=dryrun, output=False)
 
 def pkg_install(packages, dryrun=False, update_all=True):
     # Recent versions of solarisstudio fail to install due to dependency
     # conflicts unless the system is updated first.
     if update_all:
-        sh('pkg', 'update', '-v', 'entire@latest', dryrun=dryrun, output=False)
+        xsh('pkg', 'update', '-v', 'entire@latest', dryrun=dryrun, output=False)
     # Ignore package already installed errors.
     ERROR_ALREADY_INSTALLED = 4
     try:
-        sh('pkg', 'install', '--accept', *packages, dryrun=dryrun, output=False)
+        xsh('pkg', 'install', '--accept', *packages, dryrun=dryrun, output=False)
     except CommandFailed as e:
         if e.code != ERROR_ALREADY_INSTALLED:
             logger.error("pkg install failed: %s" % e)
@@ -122,7 +122,7 @@ def lookup_solarisstudio(creds='/root/creds',
         return None
 
     logger.info("Setting publisher for solarisstudio.")
-    sh('pkg', 'set-publisher',   # Will refresh if already set.
+    xsh('pkg', 'set-publisher',   # Will refresh if already set.
        '-k', os.path.join(path, key),
        '-c', os.path.join(path, cert),
        '-G', '*',
@@ -131,7 +131,7 @@ def lookup_solarisstudio(creds='/root/creds',
 
     logger.info("Getting available solaris studio packages.")
     packages = {}
-    output = sh('pkg', 'list', '-H', '-a', '-v', '--no-refresh',
+    output = xsh('pkg', 'list', '-H', '-a', '-v', '--no-refresh',
                 'pkg://solarisstudio/*', quiet=quiet)
     for line in output:
         # Extract the root package name, version, and install state.

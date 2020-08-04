@@ -24,7 +24,7 @@ import os
 import logging
 import time
 
-from afsutil.system import sh, which, CommandFailed
+from afsutil.system import xsh, which, CommandFailed
 from afsutil.transarc import AFS_SRV_BIN_DIR, AFS_SRV_SBIN_DIR, AFS_WS_DIR
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
     args.insert(0, which(cmd, raise_errors=True, extra_paths=PATHS))
     while True:
         try:
-            lines = sh(*args, quite=quiet)
+            lines = xsh(*args, quite=quiet)
             break
         except CommandFailed as cf:
             if count < retry:

@@ -34,7 +34,7 @@ file_should_exist = _mod.file_should_exist
 mkdirp = _mod.mkdirp
 nproc = _mod.nproc
 path_join = _mod.path_join
-sh = _mod.sh
+xsh = _mod.xsh
 symlink = _mod.symlink
 touch = _mod.touch
 which = _mod.which
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 def get_running():
     """Get a set of running processes."""
     ps = which('/usr/bin/ps') # avoid the old BSD variant
-    lines = sh(ps, '-e', '-f', quiet=True)
+    lines = xsh(ps, '-e', '-f', quiet=True)
     # The first line of the `ps' output is a header line which is
     # used to find the data field columns.
     column = lines[0].index('CMD')
@@ -63,7 +63,7 @@ def afs_mountpoint():
     mountpoint = None
     pattern = r'(/.\S+) on AFS'
     mount = which('mount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-    output = sh(mount, quiet=True)
+    output = xsh(mount, quiet=True)
     for line in output:
         found = re.search(pattern, line)
         if found:
@@ -79,7 +79,7 @@ def afs_umount():
     afs = afs_mountpoint()
     if afs:
         umount = which('umount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-        sh(umount, afs)
+        xsh(umount, afs)
 
 def network_interfaces():
     """Return list of non-loopback network interfaces."""
@@ -93,7 +93,7 @@ def network_interfaces():
         args = ('-a')
         pattern = r'inet (\d+\.\d+\.\d+\.\d+)'
     addrs = []
-    output = sh(command, *args)
+    output = xsh(command, *args)
     for line in output:
         match = re.match(pattern, line)
         if match:
@@ -104,7 +104,7 @@ def network_interfaces():
 
 def is_loaded(kmod):
     """Returns the list of currently loaded kernel modules."""
-    output = sh('/usr/sbin/modinfo', '-w')
+    output = xsh('/usr/sbin/modinfo', '-w')
     for line in output[1:]: # skip header line
         # Fields are: Id Loadaddr Size Info Rev Module (Name)
         m = re.match(r'\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+(\S+)', line)
@@ -122,7 +122,7 @@ def detect_gfind():
 def tar(tarball, source_path, tar=None):
     if tar is None:
         tar = 'gtar'
-    sh(tar, 'czf', tarball, source_path, quiet=True)
+    xsh(tar, 'czf', tarball, source_path, quiet=True)
 
 def untar(tarball, chdir=None, tar=None):
     if tar is None:
@@ -132,7 +132,7 @@ def untar(tarball, chdir=None, tar=None):
         savedir = os.getcwd()
         os.chdir(chdir)
     try:
-        sh(tar, 'xzf', tarball, quiet=True)
+        xsh(tar, 'xzf', tarball, quiet=True)
     finally:
         if savedir:
             os.chdir(savedir)
@@ -156,10 +156,10 @@ def configure_dynamic_linker(path):
     if not os.path.isdir(path):
         raise AssertionError("Failed to configure dynamic linker: path %s not found." % (path))
     _so_symlinks(path)
-    sh('/usr/bin/crle', '-u', '-l', path)
-    sh('/usr/bin/crle', '-64', '-u', '-l', path)
+    xsh('/usr/bin/crle', '-u', '-l', path)
+    xsh('/usr/bin/crle', '-64', '-u', '-l', path)
 
 def unload_module():
     module_id = is_loaded('afs')
     if module_id != 0:
-        sh('modunload', '-i', module_id)
+        xsh('modunload', '-i', module_id)

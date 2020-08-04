@@ -27,7 +27,7 @@ import shlex
 import platform
 import glob
 
-from afsutil.system import sh, CommandFailed, tar, mkdirp
+from afsutil.system import xsh, CommandFailed, tar, mkdirp
 from afsutil.misc import lists2dict, flatten
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def _sanity_check_dir():
 def is_git_clean_enabled(gitdir, git='git'):
     enabled = False
     try:
-        output = sh(git, '--git-dir', gitdir, 'config', '--bool', '--get', 'afsutil.clean')
+        output = xsh(git, '--git-dir', gitdir, 'config', '--bool', '--get', 'afsutil.clean')
         if output[0] == 'true':
             enabled = True
     except CommandFailed as e:
@@ -138,7 +138,7 @@ def regen(srcdir='.', force=False):
     if not force and os.path.exists('%s/configure' % srcdir):
         logger.warning("Skipping regen.sh; configure already exists")
         return 0
-    sh('/bin/sh', '-c', 'cd %s && ./regen.sh' % srcdir, output=False)
+    xsh('/bin/sh', '-c', 'cd %s && ./regen.sh' % srcdir, output=False)
 
 def configure(options=None, srcdir='.', force=False):
     if options is None:
@@ -146,7 +146,7 @@ def configure(options=None, srcdir='.', force=False):
     if not force and os.path.exists('config.status'):
         logger.warning("Skipping configure; config.status already exists")
         return 0
-    sh('%s/configure' % srcdir, *options, output=False)
+    xsh('%s/configure' % srcdir, *options, output=False)
 
 def make(jobs=1, target='all', program='make'):
     args = [program]
@@ -156,7 +156,7 @@ def make(jobs=1, target='all', program='make'):
         args.append('-j')
         args.append('{0}'.format(jobs))
     args.append(target)
-    sh(*args, output=False)
+    xsh(*args, output=False)
 
 def build(**kwargs):
     """Build the OpenAFS binaries.
@@ -208,7 +208,7 @@ def build(**kwargs):
         if log:
             args.append('--exclude')
             args.append(log)
-        sh(*args, output=False)
+        xsh(*args, output=False)
 
     _setenv()
     regen(srcdir=srcdir)

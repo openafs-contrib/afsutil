@@ -33,7 +33,7 @@ from afsutil.system import file_should_exist, \
                            directory_should_exist, \
                            directory_should_not_exist, \
                            network_interfaces, \
-                           mkdirp, touch, cat, sh
+                           mkdirp, touch, cat, xsh
 
 from afsutil.misc import lists2dict
 
@@ -277,7 +277,7 @@ class Installer(object):
         if self.scripts['pre_install']:
             logger.info("Running pre-install script.")
             args = shlex.split(self.scripts['pre_install'])
-            sh(*args, output=False)
+            xsh(*args, output=False)
         if self.cellhosts is None:
             if self.hostnames:
                 self.cellhosts = self._lookup_cellhosts(self.hostnames)
@@ -320,7 +320,7 @@ class Installer(object):
         if self.scripts['post_install']:
             logger.info("Running post-install script.")
             args = shlex.split(self.scripts['post_install'])
-            sh(*args, output=False)
+            xsh(*args, output=False)
 
     def pre_remove(self):
         """Pre remove steps."""
@@ -328,7 +328,7 @@ class Installer(object):
         if self.scripts['pre_remove']:
             logger.info("Running pre-remove script.")
             args = shlex.split(self.scripts['pre_remove'])
-            sh(*args, output=False)
+            xsh(*args, output=False)
 
     def post_remove(self):
         """Post remove steps."""
@@ -342,7 +342,7 @@ class Installer(object):
         if self.scripts['post_remove']:
             logger.info("Running post-remove script.")
             args = shlex.split(self.scripts['post_remove'])
-            sh(*args, output=False)
+            xsh(*args, output=False)
 
 def installer(dist='transarc', **kwargs):
     from afsutil.transarc import TransarcInstaller

@@ -69,7 +69,7 @@ try:
 except ImportError:
     from urllib2 import urlopen # PY2
 
-from afsutil.system import sh, mkdirp, which, CommandFailed
+from afsutil.system import xsh, mkdirp, which, CommandFailed
 from afsutil.misc import flatten, trim
 
 logger = logging.getLogger(__name__)
@@ -161,7 +161,7 @@ class RpmBuilder(object):
 
     def rpmbuild(self, *args, **kwargs):
         """Run the rpmbuild commands."""
-        return sh(
+        return xsh(
             'rpmbuild',
             '--define', '_topdir {0}'.format(self.topdir),
             *args, **kwargs)
@@ -177,7 +177,7 @@ class RpmBuilder(object):
         if gitdir:
             args.insert(1, "--git-dir")
             args.insert(2, gitdir)
-        return sh(*args, quiet=True)
+        return xsh(*args, quiet=True)
 
     def get_version(self):
         """Get the version identifier for the packaging.
@@ -261,7 +261,7 @@ class RpmBuilder(object):
 
     def find_kversions(self):
         """Find the linux kernel versions of the kernel-devel packages."""
-        kversions = sh(
+        kversions = xsh(
             'rpm', '-q', '-a',
             '--queryformat=%{VERSION}-%{RELEASE}\n', 'kernel-devel',
             quiet=True)
@@ -289,7 +289,7 @@ class RpmBuilder(object):
             if v == linux_pkgver and r.startswith(prefix):
                 return r.replace(prefix, '', 1).replace('_', '-')
             return None
-        kversions = sh(
+        kversions = xsh(
             'rpm', '-q', '-p', '--queryformat=%{VERSION} %{RELEASE}\n',
             "{dstdir}/kmod-openafs*.rpm".format(dstdir=self.dstdir),
             sed=get_kversion)
@@ -504,18 +504,18 @@ class RpmBuilder(object):
                  '--prefix', 'openafs-{version}/'.format(**names),
                  '--output', tarfile,
                  'HEAD')
-        sh('tar', 'xf', tarfile, '-C', os.path.dirname(tarfile), output=False)
+        xsh('tar', 'xf', tarfile, '-C', os.path.dirname(tarfile), output=False)
         os.remove(tarfile)
 
         logger.info("Generating source tree and documents.")
         # Note: Overwrite the extracted version string, if one.
         writefile('{topdir}/SOURCES/openafs-{version}/.version'.format(**names), version)
-        sh('/bin/sh', '-c',
+        xsh('/bin/sh', '-c',
             'cd {topdir}/SOURCES/openafs-{version} && ./regen.sh'.format(**names),
             output=False)
 
         logger.info("Creating doc tarball openafs-{version}-doc.tar.bz2".format(**names))
-        sh('tar', 'cjf',
+        xsh('tar', 'cjf',
            '{topdir}/SOURCES/openafs-{version}-doc.tar.bz2'.format(**names),
            '-C', '{topdir}/SOURCES'.format(**names),
            'openafs-{version}/doc'.format(**names),
@@ -523,7 +523,7 @@ class RpmBuilder(object):
         self.generated.append('{topdir}/SOURCES/openafs-{version}-doc.tar.bz2'.format(**names))
 
         logger.info("Creating src tarball openafs-{version}-src.tar.bz2".format(**names))
-        sh('tar', 'cjf',
+        xsh('tar', 'cjf',
            '{topdir}/SOURCES/openafs-{version}-src.tar.bz2'.format(**names),
            '-C', '{topdir}/SOURCES'.format(**names),
            '--exclude', 'doc',
@@ -676,7 +676,7 @@ class RpmBuilder(object):
             if not createrepo:
                 logger.warning("createrepo is not installed.")
             else:
-                sh('createrepo', self.dstdir, output=False)
+                xsh('createrepo', self.dstdir, output=False)
 
     def banner(self, lines):
         """Print a banner."""
@@ -715,7 +715,7 @@ class MockRpmBuilder(RpmBuilder):
         args = list(args)
         if self.verbose:
             args.append('--verbose')
-        return sh('mock', '--root', self.chroot, *args, **kwargs)
+        return xsh('mock', '--root', self.chroot, *args, **kwargs)
 
     def init_chroot(self):
         """Initialize the chroot."""

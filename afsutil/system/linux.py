@@ -34,7 +34,7 @@ file_should_exist = _mod.file_should_exist
 mkdirp = _mod.mkdirp
 nproc = _mod.nproc
 path_join = _mod.path_join
-sh = _mod.sh
+xsh = _mod.xsh
 symlink = _mod.symlink
 touch = _mod.touch
 which = _mod.which
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 def get_running():
     """Get a set of running processes."""
     ps = which('ps')
-    lines = sh(ps, '-e', '-f', quiet=True)
+    lines = xsh(ps, '-e', '-f', quiet=True)
     # The first line of the `ps' output is a header line which is
     # used to find the data field columns.
     column = lines[0].index('CMD')
@@ -65,7 +65,7 @@ def afs_mountpoint():
     mountpoint = None
     pattern = r'^AFS on (/.\S+)'
     mount = which('mount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-    output = sh(mount, quiet=True)
+    output = xsh(mount, quiet=True)
     for line in output:
         found = re.search(pattern, line)
         if found:
@@ -81,12 +81,12 @@ def afs_umount():
     afs = afs_mountpoint()
     if afs:
         umount = which('umount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-        sh(umount, afs)
+        xsh(umount, afs)
 
 def network_interfaces():
     """Return list of non-loopback network interfaces."""
     addrs = []
-    output = sh('/sbin/ip', '-oneline', '-family', 'inet', 'addr', 'show', quiet=True)
+    output = xsh('/sbin/ip', '-oneline', '-family', 'inet', 'addr', 'show', quiet=True)
     for line in output:
         match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', line)
         if match:
@@ -122,14 +122,14 @@ def configure_dynamic_linker(path):
         logger.debug("Writing %s", conf)
         for path in paths:
             f.write("%s\n" % path)
-    sh('/sbin/ldconfig')
+    xsh('/sbin/ldconfig')
 
 def unload_module():
-    output = sh('/sbin/lsmod')
+    output = xsh('/sbin/lsmod')
     for line in output:
         kmods = re.findall(r'^(libafs|openafs)\s', line)
         for kmod in kmods:
-            sh('rmmod', kmod)
+            xsh('rmmod', kmod)
 
 def detect_gfind():
     return which('find')
@@ -137,7 +137,7 @@ def detect_gfind():
 def tar(tarball, source_path, tar=None):
     if tar is None:
         tar = 'tar'
-    sh(tar, 'czf', tarball, source_path, quiet=True)
+    xsh(tar, 'czf', tarball, source_path, quiet=True)
 
 def untar(tarball, chdir=None, tar=None):
     if tar is None:
@@ -147,7 +147,7 @@ def untar(tarball, chdir=None, tar=None):
         savedir = os.getcwd()
         os.chdir(chdir)
     try:
-        sh(tar, 'xzf', tarball, quiet=True)
+        xsh(tar, 'xzf', tarball, quiet=True)
     finally:
         if savedir:
             os.chdir(savedir)

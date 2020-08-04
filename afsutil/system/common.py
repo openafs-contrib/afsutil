@@ -74,7 +74,7 @@ class CommandFailed(Exception):
               (self.cmd, self.code, self.out.strip())
         return repr(msg)
 
-def sh(*args, **kwargs):
+def xsh(*args, **kwargs):
     """Execute the command line arguments.
 
     Execute the command line and optionally return the output as
@@ -221,7 +221,7 @@ def nproc():
     nproc = which('nproc')
     if nproc is None:
         return 1  # default
-    return int(sh('nproc')[0])
+    return int(xsh('nproc')[0])
 
 def mkdirp(path):
     """Make a directory with parents."""
