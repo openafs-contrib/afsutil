@@ -166,7 +166,7 @@ class Host(object):
         """Wait for service to reach running state."""
         status = 'unknown'
         logger.info("Waiting for service %s to reach %s on host %s.", name, target, self.hostname)
-        for attempt in xrange(0, attempts+1):
+        for attempt in range(0, attempts+1):
             service = self.getservice(name)
             if service is None:
                 time.sleep(delay)
@@ -436,7 +436,7 @@ class Cell(object):
             logger.info(line)
 
     def _wait_for_quorum(self, name, hosts, attempts=60, delay=10):
-        for attempt in xrange(0, attempts+1):
+        for attempt in range(0, attempts+1):
             logger.info("Waiting for %s database quorum; attempt %d of %d.", name, (attempt+1), attempts)
             num_sync_sites = 0
             for host in hosts:

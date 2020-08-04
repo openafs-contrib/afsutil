@@ -215,7 +215,7 @@ class Keytab(object):
             numc -= 1
         realm = self._read_string(f)
         comps = []
-        for i in xrange(0, numc):
+        for i in range(0, numc):
             comps.append(self._read_string(f))
         if version != 0x0501:
             name_type, = self._read(f, "!L")
