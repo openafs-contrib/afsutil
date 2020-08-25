@@ -24,6 +24,8 @@ import logging
 import os
 import platform
 import tempfile
+import sys
+import sh
 
 try:
     from urllib.request import urlopen  # PY3
@@ -31,40 +33,45 @@ try:
 except ImportError:
     from urllib2 import urlopen, HTTPError # PY2
 
-from afsutil.system import xsh, CommandFailed
-
 logger = logging.getLogger(__name__)
 
 class Unsupported(Exception):
     pass
 
+def run(command, *args, **kwargs):
+    dryrun = kwargs.pop('dryrun')
+    if dryrun:
+        sys.stdout.write('dryrun: %s %s\n' % (command.__name__, ' '.join(args)))
+    else:
+        command(args, _in=sys.stdin, _out=sys.stdout, _err=sys.stderr, **kwargs)
+
 def apt_get_install(packages, dryrun=False):
-    xsh('apt-get', '-y', 'install', *packages, dryrun=dryrun, output=False)
+    apt_get = sh.Command('apt-get')
+    run(apt_get, 'install', '-y', *packages, dryrun=dryrun)
 
 def yum_install(packages, dryrun=False):
-    xsh('yum', 'install', '-y', *packages, dryrun=dryrun, output=False)
+    yum = sh.Command('yum')
+    run(yum, 'install', 'y', *packages, dryrun=dryrun)
 
 def dnf_install(packages, dryrun=False):
-    xsh('dnf', 'install', '-y', *packages, dryrun=dryrun, output=False)
+    dnf = sh.Command('dnf')
+    run(dnf, 'install', 'y', *packages, dryrun=dryrun)
 
 def zypper_install(packages, dryrun=False):
-    xsh('zypper', 'install', '-y', *packages, dryrun=dryrun, output=False)
+    zypper = sh.Command('zypper')
+    run(zypper, 'install', 'y', *packages, dryrun=dryrun)
 
 def pkg_install(packages, dryrun=False, update_all=True):
     # Recent versions of solarisstudio fail to install due to dependency
     # conflicts unless the system is updated first.
+    pkg = sh.Command('pkg')
     if update_all:
-        xsh('pkg', 'update', '-v', 'entire@latest', dryrun=dryrun, output=False)
-    # Ignore package already installed errors.
-    ERROR_ALREADY_INSTALLED = 4
-    try:
-        xsh('pkg', 'install', '--accept', *packages, dryrun=dryrun, output=False)
-    except CommandFailed as e:
-        if e.code != ERROR_ALREADY_INSTALLED:
-            logger.error("pkg install failed: %s" % e)
-            raise e
+        run(pkg, 'update', '-v', 'entire@latest', dryrun=dryrun)
+    # Ignore package already installed errors; exit code 4.
+    run(pkg, 'install', '--accept', *packages, _ok_code=[0,4], dryrun=dryrun)
 
-def lookup_solarisstudio(creds='/root/creds',
+def lookup_solarisstudio(dryrun,
+                         creds='/root/creds',
                          key='pkg.oracle.com.key.pem',
                          cert='pkg.oracle.com.certificate.pem',
                          **kwargs):
@@ -80,6 +87,7 @@ def lookup_solarisstudio(creds='/root/creds',
     path = None
     tmpdir = None
     quiet = True
+    pkg = sh.Command('pkg')
 
     def download(baseurl, filename, path):
         url = os.path.join(baseurl, filename)
@@ -122,24 +130,24 @@ def lookup_solarisstudio(creds='/root/creds',
         return None
 
     logger.info("Setting publisher for solarisstudio.")
-    xsh('pkg', 'set-publisher',   # Will refresh if already set.
+    run(pkg, 'set-publisher',   # Will refresh if already set.
        '-k', os.path.join(path, key),
        '-c', os.path.join(path, cert),
        '-G', '*',
        '-g', 'https://pkg.oracle.com/solarisstudio/release', 'solarisstudio',
-       output=False, quiet=quiet)
+       dryrun=dryrun)
 
     logger.info("Getting available solaris studio packages.")
     packages = {}
-    output = xsh('pkg', 'list', '-H', '-a', '-v', '--no-refresh',
-                'pkg://solarisstudio/*', quiet=quiet)
-    for line in output:
+    output = io.StringIO()
+    pkg('list', '-H', '-a', '-v', '--no-refresh', 'pkg://solarisstudio/*', _out=output)
+    for line in output.splitlines():
         # Extract the root package name, version, and install state.
         fmri,ifo = line.split()
-        pkg,vt = fmri.split('@')
+        p,vt = fmri.split('@')
         v,t = vt.split(':')
         version = v.split(',')[0]
-        name = pkg.replace('pkg://solarisstudio/developer/','')
+        name = p.replace('pkg://solarisstudio/developer/','')
         istate = ifo[0] == 'i'
         if '/' in name:
             pass # Skip non-root ones, e.g. 'developerstudio-125/cc'.
@@ -311,7 +319,7 @@ def getdeps(dryrun=False, skip_headers=False, skip_solarisstudio=False, **kwargs
                 'text/locale',
             ]
             if not skip_solarisstudio:
-                solarisstudio = lookup_solarisstudio(**kwargs)
+                solarisstudio = lookup_solarisstudio(dryrun, **kwargs)
                 if solarisstudio:
                     packages.append(solarisstudio)
             pkg_install(packages, dryrun)
