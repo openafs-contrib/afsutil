@@ -25,7 +25,6 @@ import os
 import subprocess
 import sys
 import six
-import sh
 
 logger = logging.getLogger(__name__)
 

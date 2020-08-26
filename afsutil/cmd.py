@@ -21,6 +21,7 @@
 """Wrappers to invoke AFS command line tools."""
 
 import os
+import io
 import logging
 import time
 import sh
@@ -62,7 +63,7 @@ def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
     Raises a CommandFailed exception if the command exits with
     a non-zero exit code."""
     paths = os.environ.get('PATH', '').split(':') + PATHS
-    command = sh.Comand(cmd, search_paths=paths)
+    command = sh.Command(cmd, search_paths=paths)
 
     count = 0 # retry counter
     if args is None:
@@ -72,11 +73,9 @@ def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
 
     while True:
         try:
-            if quiet:
-                command(*args)
-            else:
-                command(*args, _in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
-            break
+            output = io.StringIO()
+            command(*args, _out=output)
+            return output.getvalue()
         except sh.ErrorReturnCode as ec:
             if count < retry:
                 count += 1
@@ -87,7 +86,6 @@ def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
                     cleanup()  # Try to cleanup the mess from the last failure.
             else:
                 raise ec
-    return "\n".join(lines)
 
 def asetkey(*args, **kwargs):
     return _run('asetkey', args=args, **kwargs)

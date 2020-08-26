@@ -20,11 +20,13 @@
 
 """Install build dependencies for OpenAFS."""
 
+import io
 import logging
 import os
 import platform
-import tempfile
 import sys
+import tempfile
+
 import sh
 
 try:
@@ -86,7 +88,6 @@ def lookup_solarisstudio(dryrun,
     """
     path = None
     tmpdir = None
-    quiet = True
     pkg = sh.Command('pkg')
 
     def download(baseurl, filename, path):

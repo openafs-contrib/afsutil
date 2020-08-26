@@ -29,7 +29,7 @@ import glob
 import sys
 import sh
 
-from afsutil.system import CommandFailed, tar, mkdirp
+from afsutil.system import tar, mkdirp
 from afsutil.misc import lists2dict, flatten
 
 logger = logging.getLogger(__name__)
