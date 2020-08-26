@@ -23,8 +23,8 @@
 import os
 import logging
 import time
+import sh
 
-from afsutil.system import xsh, which, CommandFailed
 from afsutil.transarc import AFS_SRV_BIN_DIR, AFS_SRV_SBIN_DIR, AFS_WS_DIR
 
 logger = logging.getLogger(__name__)
@@ -61,18 +61,23 @@ def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
 
     Raises a CommandFailed exception if the command exits with
     a non-zero exit code."""
+    paths = os.environ.get('PATH', '').split(':') + PATHS
+    command = sh.Comand(cmd, search_paths=paths)
+
     count = 0 # retry counter
     if args is None:
         args = []
     elif not isinstance(args, list):
         args = list(args)
-    cmd = _cmdpath.get(cmd, cmd)
-    args.insert(0, which(cmd, raise_errors=True, extra_paths=PATHS))
+
     while True:
         try:
-            lines = xsh(*args, quite=quiet)
+            if quiet:
+                command(*args)
+            else:
+                command(*args, _in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
             break
-        except CommandFailed as cf:
+        except sh.ErrorReturnCode as ec:
             if count < retry:
                 count += 1
                 logger.info("Retrying %s command in %d seconds; retry %d of %d.",
@@ -81,7 +86,7 @@ def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
                 if cleanup:
                     cleanup()  # Try to cleanup the mess from the last failure.
             else:
-                raise cf
+                raise ec
     return "\n".join(lines)
 
 def asetkey(*args, **kwargs):
