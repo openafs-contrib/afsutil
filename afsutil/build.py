@@ -26,11 +26,14 @@ import re
 import shlex
 import platform
 import glob
+import sys
+import sh
 
-from afsutil.system import xsh, CommandFailed, tar, mkdirp
+from afsutil.system import CommandFailed, tar, mkdirp
 from afsutil.misc import lists2dict, flatten
 
 logger = logging.getLogger(__name__)
+STDIO = dict(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
 
 def cfopts():
     """Return the default configure options for this system."""
@@ -65,15 +68,9 @@ def _sanity_check_dir():
             raise AssertionError(msg % (d))
 
 def is_git_clean_enabled(gitdir, git='git'):
-    enabled = False
-    try:
-        output = xsh(git, '--git-dir', gitdir, 'config', '--bool', '--get', 'afsutil.clean')
-        if output[0] == 'true':
-            enabled = True
-    except CommandFailed as e:
-        if e.code != 1:
-            raise e
-    return enabled
+    git = sh.Command('git').bake(_tty_out=False)
+    output = git('--git-dir', gitdir, 'config', '--bool', '--get', 'afsutil.clean', _ok_code=[0, 1])
+    return (str(output).strip() == 'true')
 
 def _detect_solariscc():
     search = [
@@ -138,7 +135,8 @@ def regen(srcdir='.', force=False):
     if not force and os.path.exists('%s/configure' % srcdir):
         logger.warning("Skipping regen.sh; configure already exists")
         return 0
-    xsh('/bin/sh', '-c', 'cd %s && ./regen.sh' % srcdir, output=False)
+    regen = sh.Command('./regen.sh').bake(**STDIO)
+    regen(_cwd=srcdir)
 
 def configure(options=None, srcdir='.', force=False):
     if options is None:
@@ -146,17 +144,19 @@ def configure(options=None, srcdir='.', force=False):
     if not force and os.path.exists('config.status'):
         logger.warning("Skipping configure; config.status already exists")
         return 0
-    xsh('%s/configure' % srcdir, *options, output=False)
+    configure = sh.Command(os.path.join(srcdir, 'configure')).bake(**STDIO)
+    configure(*options)
 
 def make(jobs=1, target='all', program='make'):
-    args = [program]
+    make = sh.Command(program).bake(**STDIO)
+    args = []
     if jobs > 1:
-        # Requires a `make` whichsupports the -j option. If your `make` does
+        # Requires a `make` which supports the -j option. If your `make` does
         # not, then specify the path to `gmake` or set jobs to 1.
         args.append('-j')
         args.append('{0}'.format(jobs))
     args.append(target)
-    xsh(*args, output=False)
+    make(*args)
 
 def build(**kwargs):
     """Build the OpenAFS binaries.
@@ -195,6 +195,7 @@ def build(**kwargs):
         _sanity_check_dir()
 
     if clean:
+        git = sh.Command(_git).bake(_tty_out=False)
         gitdir = os.path.abspath(os.path.join(srcdir, '.git'))
         if not os.path.isdir(gitdir):
             logger.error("Unable to run git clean; not a git directory: '%s'", gitdir)
@@ -204,11 +205,12 @@ def build(**kwargs):
             logger.warning("To enable git clean before builds:")
             logger.warning("    git config --local afsutil.clean true");
             return 1
-        args = [_git, '--git-dir', gitdir, '--work-tree', srcdir, 'clean', '-f', '-d', '-x', '-q']
+        args = ['--git-dir', gitdir, '--work-tree', srcdir, 'clean', '-f', '-d', '-x', '-q']
         if log:
             args.append('--exclude')
             args.append(log)
-        xsh(*args, output=False)
+        args.append('--exclude=.vscode')
+        git(*args)
 
     _setenv()
     regen(srcdir=srcdir)

@@ -221,7 +221,7 @@ def nproc():
     """Return the number of processing units."""
     try:
         from sh import nproc
-        return int(six.ensure_text(nproc().stdout))
+        return int(str(nproc()))
     except:
         return 1  # default
 

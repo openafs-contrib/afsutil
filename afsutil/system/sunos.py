@@ -23,6 +23,8 @@
 import logging
 import os
 import re
+import sys
+import sh
 
 from afsutil.system import common as _mod
 CommandMissing = _mod.CommandMissing
@@ -122,17 +124,19 @@ def detect_gfind():
 def tar(tarball, source_path, tar=None):
     if tar is None:
         tar = 'gtar'
-    xsh(tar, 'czf', tarball, source_path, quiet=True)
+    tar = sh.Command(tar).bake(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
+    tar('czf', tarball, source_path)
 
 def untar(tarball, chdir=None, tar=None):
     if tar is None:
         tar = 'gtar'
+    tar = sh.Command(tar).bake(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
     savedir = None
     if chdir:
         savedir = os.getcwd()
         os.chdir(chdir)
     try:
-        xsh(tar, 'xzf', tarball, quiet=True)
+        tar('xzf', tarball)
     finally:
         if savedir:
             os.chdir(savedir)
