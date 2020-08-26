@@ -20,25 +20,27 @@
 
 """Install and remove Transarc-style OpenAFS distributions."""
 
+import glob
 import logging
 import os
+import pprint
 import re
 import shutil
 import socket
-import glob
-import pprint
-import shlex
+import sys
+
+import sh
 
 from afsutil.system import file_should_exist, \
                            directory_should_exist, \
                            directory_should_not_exist, \
                            network_interfaces, \
-                           mkdirp, touch, cat, xsh
+                           mkdirp, touch, cat
 
 from afsutil.misc import lists2dict
 
 logger = logging.getLogger(__name__)
-
+shell = sh.Command('/bin/sh').bake(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
 
 def is_afs_path(path):
     """Returns true if this is one of ours."""
@@ -276,8 +278,7 @@ class Installer(object):
         logger.debug("pre_install")
         if self.scripts['pre_install']:
             logger.info("Running pre-install script.")
-            args = shlex.split(self.scripts['pre_install'])
-            xsh(*args, output=False)
+            shell('-c', self.scripts['pre_install'])
         if self.cellhosts is None:
             if self.hostnames:
                 self.cellhosts = self._lookup_cellhosts(self.hostnames)
@@ -319,16 +320,14 @@ class Installer(object):
                 cache_size)
         if self.scripts['post_install']:
             logger.info("Running post-install script.")
-            args = shlex.split(self.scripts['post_install'])
-            xsh(*args, output=False)
+            shell('-c', self.scripts['post_install'])
 
     def pre_remove(self):
         """Pre remove steps."""
         logger.debug("pre_remove")
         if self.scripts['pre_remove']:
             logger.info("Running pre-remove script.")
-            args = shlex.split(self.scripts['pre_remove'])
-            xsh(*args, output=False)
+            shell('-c', self.scripts['pre_remove'])
 
     def post_remove(self):
         """Post remove steps."""
@@ -341,8 +340,7 @@ class Installer(object):
                 self._purge_cache()
         if self.scripts['post_remove']:
             logger.info("Running post-remove script.")
-            args = shlex.split(self.scripts['post_remove'])
-            xsh(*args, output=False)
+            shell('-c', self.scripts['post_remove'])
 
 def installer(dist='transarc', **kwargs):
     from afsutil.transarc import TransarcInstaller
