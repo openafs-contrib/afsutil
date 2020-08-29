@@ -69,7 +69,7 @@ try:
 except ImportError:
     from urllib2 import urlopen # PY2
 
-from afsutil.system import xsh, mkdirp, which, CommandFailed
+from afsutil.system import mkdirp, which, CommandFailed
 from afsutil.misc import flatten, trim
 
 logger = logging.getLogger(__name__)
