@@ -22,8 +22,10 @@
 
 import os
 import logging
+import sys
+import sh
 
-from afsutil.system import xsh, is_afs_mounted, afs_umount, unload_module, get_running, is_running
+from afsutil.system import is_afs_mounted, afs_umount, unload_module, get_running, is_running
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +52,11 @@ def _rc(component, action):
     unit_file = '/usr/lib/systemd/system/%s.service' % (name)
     init_script = "/etc/init.d/%s" % (name)
     if os.path.isfile(unit_file):
-        xsh('systemctl', action, name, output=False)
+        systemctl = sh.Command('systemctl').bake(_in=sys.stdin, _out=sys.out, _err=sys.stderr)
+        systemctl(action, name)
     elif os.path.isfile(init_script):
-        if logger.getEffectiveLevel() == logging.DEBUG:
-            xsh('/bin/bash', '-x', init_script, action, output=False)
-        else:
-            xsh(init_script, action, output=False)
+        shell = sh.Command('/bin/sh').bake(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
+        shell('-c', '%s %s' % (init_script, action))
     else:
         raise AssertionError("Init script is missing for %s!" % (name))
 

@@ -34,7 +34,6 @@ file_should_exist = _mod.file_should_exist
 mkdirp = _mod.mkdirp
 nproc = _mod.nproc
 path_join = _mod.path_join
-xsh = _mod.xsh
 symlink = _mod.symlink
 touch = _mod.touch
 which = _mod.which
@@ -43,15 +42,18 @@ logger = logging.getLogger(__name__)
 
 def get_running():
     """Get a set of running processes."""
-    ps = which('ps')
-    lines = xsh(ps, '-e', '-f', quiet=True)
-    # The first line of the `ps' output is a header line which is
-    # used to find the data field columns.
-    column = lines[0].index('CMD')
+    ps = sh.Command('ps')
     procs = set()
-    for line in lines[1:]:
+    column = None
+    for line in ps(, '-e', '-f', _iter=True):
+        line = line.rstrip()
+        if column is None:
+            # The first line of the `ps' output is a header line which
+            # used to find the command field column.
+            column = line.index('CMD')
+            continue
         cmd_line = line[column:]
-        if cmd_line[0] == '[':  # skip linux threads
+        if cmd_line.startswith('['):  # skip linux threads
             continue
         command = cmd_line.split()[0]
         procs.add(os.path.basename(command))
@@ -64,9 +66,10 @@ def is_running(program):
 def afs_mountpoint():
     mountpoint = None
     pattern = r'^AFS on (/.\S+)'
-    mount = which('mount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-    output = xsh(mount, quiet=True)
-    for line in output:
+    paths = os.environ.get('PATH', '').split(':')
+    paths.extend(['/bin', '/sbin', '/usr/sbin'])
+    mount = sh.Command('mount', search_paths=paths)
+    for line in mount(_iter=True):
         found = re.search(pattern, line)
         if found:
             mountpoint = found.group(1)

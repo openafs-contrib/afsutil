@@ -25,7 +25,6 @@ mkdirp = _mod.mkdirp
 network_interfaces = _mod.network_interfaces
 nproc = _mod.nproc
 path_join = _mod.path_join
-xsh = _mod.xsh
 symlink = _mod.symlink
 tar = _mod.tar
 touch = _mod.touch

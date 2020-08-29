@@ -21,16 +21,18 @@
 """Helper to install and remove OpenAFS RPM packages via yum."""
 
 import logging
+import sys
+import sh
 
 from afsutil.rpm import RpmInstaller
-from afsutil.system import xsh
 from afsutil.install import Installer
 
 logger = logging.getLogger(__name__)
 
 def yum(*args):
     """Helper to run the yum command."""
-    return xsh('yum', *args, quiet=False)
+    yum = sh.Command('yum').bake(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
+    yum(*args)
 
 class YumInstaller(RpmInstaller):
     """Install and remove OpenAFS packages with yum."""
