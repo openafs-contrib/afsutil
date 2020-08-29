@@ -23,15 +23,26 @@
 import logging
 import os
 import glob
+import sys
+import sh
 
-from afsutil.system import xsh
 from afsutil.install import Installer
 
 logger = logging.getLogger(__name__)
 
 def rpm(*args):
-    """Helper to run the rpm command."""
-    return xsh('rpm', *args, quiet=True)
+    """Run the rpm command."""
+    rpm = sh.Command('rpm')
+    rpm(*args, _in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
+
+def rpm_query(*args):
+    """Run rpm --query and return the output as a list of strings."""
+    rpm = sh.Command('rpm')
+    output = []
+    for line in rpm('--query', *args, _iter=True):
+        line = line.rstrip()
+        output.append(line)
+    return output
 
 class RpmInstaller(Installer):
     """Helper to install and remove OpenAFS RPMs."""
@@ -47,9 +58,7 @@ class RpmInstaller(Installer):
         # We get all of packages and check the names here since the rpm
         # command on this system could be old and not support wildcards.
         self.installed = {}
-        output = rpm('--query', '--all',
-                     '--queryformat', '%{NAME} %{VERSION} %{RELEASE} %{ARCH}\\n')
-        for line in output:
+        for line in rpm_query('--all', '--queryformat', '%{NAME} %{VERSION} %{RELEASE} %{ARCH}\\n'):
             name,version,release,arch = line.split()
             if name.startswith('kmod-openafs') or name.startswith('openafs'):
                 self.installed[name] = {
@@ -87,8 +96,9 @@ class RpmInstaller(Installer):
             for f in files:
                 if f.endswith('.src.rpm'): # Skip the source rpm, if present.
                     continue
-                output = rpm('--query', '--package', f,
-                             '--queryformat', '%{NAME} %{VERSION} %{RELEASE} %{ARCH}\\n')
+                output = rpm_query(
+                    '--package', f,
+                    '--queryformat', '%{NAME} %{VERSION} %{RELEASE} %{ARCH}\\n')
                 name,version,release,arch = output[0].split()
                 packages.append({'file': f, 'name': name, 'version': version,
                                 'release': release, 'arch': arch})
