@@ -22,8 +22,6 @@
 
 import logging
 import os
-import subprocess
-import sys
 import six
 
 logger = logging.getLogger(__name__)
@@ -57,22 +55,8 @@ class RingBuffer:
         """ Return a list of elements from the oldest to the newest. """
         return self.data
 
-
 class CommandMissing(Exception):
-    """Command not found."""
-
-class CommandFailed(Exception):
-    """Command exited with a non-zero exit code."""
-    def __init__(self, args, code, out):
-        self.cmd = subprocess.list2cmdline(args)
-        self.args = args
-        self.code = code
-        self.out = out
-
-    def __str__(self):
-        msg = "Command failed! %s; code=%d, out='%s'" % \
-              (self.cmd, self.code, self.out.strip())
-        return repr(msg)
+    pass
 
 def which(program, extra_paths=None, raise_errors=False):
     """Find a program in the PATH.

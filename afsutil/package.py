@@ -63,13 +63,14 @@ import re
 import logging
 import shutil
 import glob
+import sh
 
 try:
     from urllib.request import urlopen  # PY3
 except ImportError:
     from urllib2 import urlopen # PY2
 
-from afsutil.system import mkdirp, which, CommandFailed
+from afsutil.system import mkdirp
 from afsutil.misc import flatten, trim
 
 logger = logging.getLogger(__name__)
@@ -159,10 +160,8 @@ class RpmBuilder(object):
             args.append(without)
         return args
 
-    def _run(self, *args, filter=None):
-
-
-    def rpm(self, *args, filter=None):
+    def rpm(self, *args, **kwargs):
+        filter = kwargs.pop('filter', None)
         rpm = self.Command('rpm')
         output = []
         for line in rpm(*args, _iter=True):
@@ -176,7 +175,8 @@ class RpmBuilder(object):
                 output.append(line)
         return output
 
-    def rpmbuild(self, *args, filter=None):
+    def rpmbuild(self, *args, **kwargs):
+        filter = kwargs.pop('filter', None)
         rpmbuild = sh.Command('rpmbuild')
         topdir = '_topdir %s' % (self.topdir),
         output = []
@@ -694,7 +694,7 @@ class RpmBuilder(object):
                 continue
             try:
                 self.build_kmod(srpm=srpm, kversion=kversion)
-            except CommandFailed as fail:
+            except sh.ErrorReturnCode as fail:
                 self.failed.append(kversion)
                 logger.warning("Failed to build kmod for version {0}".format(kversion))
                 logger.exception(fail)

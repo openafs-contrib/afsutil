@@ -23,6 +23,8 @@
 import logging
 import os
 import re
+import sys
+import sh
 
 from afsutil.system import common as _mod
 CommandMissing = _mod.CommandMissing
@@ -45,7 +47,7 @@ def get_running():
     ps = sh.Command('ps')
     procs = set()
     column = None
-    for line in ps(, '-e', '-f', _iter=True):
+    for line in ps('-e', '-f', _iter=True):
         line = line.rstrip()
         if column is None:
             # The first line of the `ps' output is a header line which
@@ -113,7 +115,7 @@ def configure_dynamic_linker(path):
 
     Add a path to the ld configuration file for the OpenAFS shared
     libraries and run ldconfig to update the dynamic linker."""
-    ldconfg = sh.Command('/sbin/ldconfig')
+    ldconfig = sh.Command('/sbin/ldconfig')
     conf = '/etc/ld.so.conf.d/openafs.conf'
     paths = set()
     paths.add(path)

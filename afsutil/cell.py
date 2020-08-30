@@ -34,11 +34,12 @@ import os
 import re
 import socket
 import six
+import sh
 
 import afsutil.system
 import afsutil.keytab
 from afsutil.cmd import bos, vos, pts, fs, udebug, rxdebug
-from afsutil.system import CommandFailed, afs_mountpoint
+from afsutil.system import afs_mountpoint
 from afsutil.transarc import AFS_SRV_LIBEXEC_DIR
 from afsutil.misc import lists2dict, uniq
 
@@ -119,7 +120,7 @@ class Host(object):
     def rxping(self, service='bosserver', retry=10):
         try:
             rxdebug('-server', self.hostname, '-port', PORT[service], '-version', retry=retry)
-        except CommandFailed:
+        except sh.ErrorReturnCode:
             success = False
         else:
             success = True
@@ -275,7 +276,7 @@ class Host(object):
         port = PORT[name]
         try:
             output = udebug('-server', self.hostname, '-port', port, retry=10)
-        except CommandFailed:
+        except sh.ErrorReturnCode:
             return False
         logger.debug("udebug for %s: %s", self.hostname, output)
         if re.search(r'clock may be bad', output):
@@ -335,7 +336,7 @@ class Host(object):
     def _check_volume(self, name):
         try:
             vos('listvldb', '-name', name, '-quiet', '-noresolve', '-nosort')
-        except CommandFailed:
+        except sh.ErrorReturnCode:
             return False
         else:
             return True
@@ -456,12 +457,12 @@ class Cell(object):
         # ubik BIGTIME and retry.
         try:
             pts('createuser', '-name', admin, retry=1, wait=80)
-        except CommandFailed as e:
+        except sh.ErrorReturnCode as e:
             if not "Entry for name already exists" in e.out:
                 raise
         try:
             pts('adduser', '-user', admin, '-group', 'system:administrators')
-        except CommandFailed as e:
+        except sh.ErrorReturnCode as e:
             if not "Entry for id already exists" in e.out:
                 raise
 

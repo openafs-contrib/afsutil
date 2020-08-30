@@ -47,7 +47,7 @@ def get_running():
     ps = sh.Command('/usr/bin/ps') # avoid the old BSD variant
     procs = set()
     column = None
-    for line in ps(, '-e', '-f', _iter=True):
+    for line in ps('-e', '-f', _iter=True):
         line = line.rstrip()
         if column is None:
             # The first line of the `ps' output is a header line which
