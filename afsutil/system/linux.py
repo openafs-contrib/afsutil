@@ -83,14 +83,16 @@ def afs_umount():
     """Attempt to unmount afs, if mounted."""
     afs = afs_mountpoint()
     if afs:
-        umount = which('umount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-        xsh(umount, afs)
+        paths = os.environ.get('PATH', '').split(':')
+        paths.extend(['/bin', '/sbin', '/usr/sbin'])
+        umount = sh.Command('umount', search_paths=paths)
+        umount(afs)
 
 def network_interfaces():
     """Return list of non-loopback network interfaces."""
     addrs = []
-    output = xsh('/sbin/ip', '-oneline', '-family', 'inet', 'addr', 'show', quiet=True)
-    for line in output:
+    ip = sh.Command('/sbin/ip')
+    for line in ip('-oneline', '-family', 'inet', 'addr', 'show', _iter=True):
         match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', line)
         if match:
             addr = match.group(1)
@@ -111,6 +113,7 @@ def configure_dynamic_linker(path):
 
     Add a path to the ld configuration file for the OpenAFS shared
     libraries and run ldconfig to update the dynamic linker."""
+    ldconfg = sh.Command('/sbin/ldconfig')
     conf = '/etc/ld.so.conf.d/openafs.conf'
     paths = set()
     paths.add(path)
@@ -125,14 +128,15 @@ def configure_dynamic_linker(path):
         logger.debug("Writing %s", conf)
         for path in paths:
             f.write("%s\n" % path)
-    xsh('/sbin/ldconfig')
+    ldconfig()
 
 def unload_module():
-    output = xsh('/sbin/lsmod')
-    for line in output:
+    lsmod = sh.Command('/sbin/lsmod')
+    rmmod = sh.Command('/sbin/rmmod')
+    for line in lsmod(_iter=True):
         kmods = re.findall(r'^(libafs|openafs)\s', line)
         for kmod in kmods:
-            xsh('rmmod', kmod)
+            rmmod(kmod)
 
 def detect_gfind():
     return which('find')
@@ -140,17 +144,19 @@ def detect_gfind():
 def tar(tarball, source_path, tar=None):
     if tar is None:
         tar = 'tar'
-    xsh(tar, 'czf', tarball, source_path, quiet=True)
+    tar = sh.Command(tar).bake(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
+    tar('czf', tarball, source_path)
 
 def untar(tarball, chdir=None, tar=None):
     if tar is None:
         tar = 'tar'
+    tar = sh.Command(tar).bake(_in=sys.stdin, _out=sys.stdout, _err=sys.stderr)
     savedir = None
     if chdir:
         savedir = os.getcwd()
         os.chdir(chdir)
     try:
-        xsh(tar, 'xzf', tarball, quiet=True)
+        tar('xzf', tarball)
     finally:
         if savedir:
             os.chdir(savedir)

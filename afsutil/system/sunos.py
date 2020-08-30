@@ -36,7 +36,6 @@ file_should_exist = _mod.file_should_exist
 mkdirp = _mod.mkdirp
 nproc = _mod.nproc
 path_join = _mod.path_join
-xsh = _mod.xsh
 symlink = _mod.symlink
 touch = _mod.touch
 which = _mod.which
@@ -45,14 +44,19 @@ logger = logging.getLogger(__name__)
 
 def get_running():
     """Get a set of running processes."""
-    ps = which('/usr/bin/ps') # avoid the old BSD variant
-    lines = xsh(ps, '-e', '-f', quiet=True)
-    # The first line of the `ps' output is a header line which is
-    # used to find the data field columns.
-    column = lines[0].index('CMD')
+    ps = sh.Command('/usr/bin/ps') # avoid the old BSD variant
     procs = set()
-    for line in lines[1:]:
+    column = None
+    for line in ps(, '-e', '-f', _iter=True):
+        line = line.rstrip()
+        if column is None:
+            # The first line of the `ps' output is a header line which
+            # used to find the command field column.
+            column = line.index('CMD')
+            continue
         cmd_line = line[column:]
+        if cmd_line.startswith('['):  # skip linux threads
+            continue
         command = cmd_line.split()[0]
         procs.add(os.path.basename(command))
     return procs
@@ -64,9 +68,10 @@ def is_running(program):
 def afs_mountpoint():
     mountpoint = None
     pattern = r'(/.\S+) on AFS'
-    mount = which('mount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-    output = xsh(mount, quiet=True)
-    for line in output:
+    paths = os.environ.get('PATH', '').split(':')
+    paths.extend(['/bin', '/sbin', '/usr/sbin'])
+    mount = sh.Command('mount', search_paths=paths)
+    for line in mount(_iter=True):
         found = re.search(pattern, line)
         if found:
             mountpoint = found.group(1)
@@ -80,23 +85,24 @@ def afs_umount():
     """Attempt to unmount afs, if mounted."""
     afs = afs_mountpoint()
     if afs:
-        umount = which('umount', extra_paths=['/bin', '/sbin', '/usr/sbin'])
-        xsh(umount, afs)
+        paths = os.environ.get('PATH', '').split(':')
+        paths.extend(['/bin', '/sbin', '/usr/sbin'])
+        umount = sh.Command('umount', search_paths=paths)
+        umount(afs)
 
 def network_interfaces():
     """Return list of non-loopback network interfaces."""
     try:
-        command = which('ipadm')
+        command = sh.Command('ipadm')
         args = ('show-addr', '-p', '-o', 'STATE,ADDR')
         pattern = r'ok:(\d+\.\d+\.\d+\.\d+)'
-    except CommandMissing:
+    except sh.CommandNotFound:
         # Fall back to old command on old solaris releases.
-        command = which('/usr/sbin/ifconfig')
+        command = sh.Command('/usr/sbin/ifconfig')
         args = ('-a')
         pattern = r'inet (\d+\.\d+\.\d+\.\d+)'
     addrs = []
-    output = xsh(command, *args)
-    for line in output:
+    for line in command(*args, _iter=True):
         match = re.match(pattern, line)
         if match:
             addr = match.group(1)
@@ -106,8 +112,10 @@ def network_interfaces():
 
 def is_loaded(kmod):
     """Returns the list of currently loaded kernel modules."""
-    output = xsh('/usr/sbin/modinfo', '-w')
-    for line in output[1:]: # skip header line
+    modinfo = sh.Command('/usr/sbin/modinfo')
+    for i, line in enumerate(modinfo('-w', _iter=True)):
+        if i == 0:
+            continue # skip header line
         # Fields are: Id Loadaddr Size Info Rev Module (Name)
         m = re.match(r'\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+(\S+)', line)
         if not m:
@@ -157,13 +165,15 @@ def _so_symlinks(path):
             symlink(fname, so)
 
 def configure_dynamic_linker(path):
+    crle = sh.Command('/usr/bin/crle')
     if not os.path.isdir(path):
         raise AssertionError("Failed to configure dynamic linker: path %s not found." % (path))
     _so_symlinks(path)
-    xsh('/usr/bin/crle', '-u', '-l', path)
-    xsh('/usr/bin/crle', '-64', '-u', '-l', path)
+    crle('-u', '-l', path)
+    crle('-64', '-u', '-l', path)
 
 def unload_module():
+    modunload = sh.Command('modunload')
     module_id = is_loaded('afs')
     if module_id != 0:
-        xsh('modunload', '-i', module_id)
+        modunload('-i', module_id)
