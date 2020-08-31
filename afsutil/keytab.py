@@ -27,10 +27,12 @@ import struct
 import time
 import logging
 import shutil
+import io
+import sh
 
-from afsutil.system import CommandFailed, mkdirp
+from afsutil.system import mkdirp
 from afsutil.transarc import AFS_CONF_DIR
-from afsutil.cmd import asetkey, aklog
+from afsutil.cmd import search_paths
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,14 @@ KRB_ENCTYPES = {
 
 # Helpers
 
+def asetkey(*args, **kwargs):
+    asetkey = sh.Command('asetkey', search_paths=search_paths())
+    return asetkey(*args, **kwargs)
+
+def aklog(*args, **kwargs):
+    aklog = sh.Command('aklog', search_paths=search_paths())
+    return aklog(*args, **kwargs)
+
 def _split_principal(principal):
     """Split a fully qualified principal string into (components, realm)."""
     if not '@' in principal:
@@ -93,11 +103,9 @@ def _check_for_extended_keyfile_support():
     Runs asetkey without options to elicit the usage message, then
     checks for the new 'add' subcommand."""
     logger.debug("Checking if asetkey supports extended key files.")
-    usage = None
-    try:
-        usage = asetkey(quiet=True)
-    except CommandFailed as e:
-        usage = e.out
+    buf = io.StringIO()
+    asetkey(_ok_code=[1], _err=buf)
+    usage = buf.getvalue()
     logger.debug("asetkey usage: %s", usage)
     if usage is None or not "usage" in usage:
         raise AssertionError("Failed to get asetkey usage.")
@@ -529,8 +537,8 @@ class Keytab(object):
         cell,realm = sp.replace('afs/', '').split('@')
         principal = "%s@%s" % (user, realm)
 
-        output = aklog('-d', '-c', cell, '-k', realm, '-principal', principal, '-keytab', self.filename)
-        for line in output.splitlines():
+        for line in aklog('-d', '-c', cell, '-k', realm, '-principal', principal,
+                          '-keytab', self.filename, _iter=True):
             logger.info(line)
 
 def create(cell='robotest', realm=None, keytab='/tmp/afs.keytab',

@@ -25,8 +25,12 @@ import os
 import shutil
 import glob
 import tempfile
-import urllib2
 import sh
+
+try:
+    from urllib.request import urlopen  # PY3
+except ImportError:
+    from urllib2 import urlopen # PY2
 
 import afsutil
 from afsutil.install import Installer, \
@@ -385,7 +389,7 @@ class TransarcInstaller(Installer):
 
         def _download(url):
             BLOCK_SIZE = 4 * 1024
-            rsp = urllib2.urlopen(url)
+            rsp = urlopen(url)
             (fh, self.tmpfile) = tempfile.mkstemp(suffix='.tar.gz')
             logger.info("Downloading %s to %s", url, self.tmpfile)
             with open(self.tmpfile, 'wb') as tarball:

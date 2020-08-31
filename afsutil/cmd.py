@@ -48,6 +48,11 @@ _cmdpath = {
 def setpath(cmd, path):
     _cmdpath[cmd] = path
 
+def search_paths():
+    paths = os.environ.get('PATH', '').split(':')
+    paths.extend(PATHS)
+    return paths
+
 def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
     """Execute a command and return the output as a string.
 
@@ -60,10 +65,12 @@ def _run(cmd, args=None, quiet=False, retry=0, wait=1, cleanup=None):
 
     returns: command output as a string
 
-    Raises a CommandFailed exception if the command exits with
+    Raises a sh.ErrorReturnCode exception if the command exits with
     a non-zero exit code."""
-    paths = os.environ.get('PATH', '').split(':') + PATHS
-    command = sh.Command(cmd, search_paths=paths)
+    if cmd in _cmd_path:
+        command = sh.Command(_cmd_path[cmd])
+    else:
+        command = sh.Command(cmd, search_paths=search_paths)
 
     count = 0 # retry counter
     if args is None:

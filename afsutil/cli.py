@@ -45,7 +45,6 @@ Example:
 
 from __future__ import print_function
 import argparse, logging, os, sys
-from afsutil.system import CommandFailed
 try:
     from configparser import ConfigParser # python3
 except ImportError:
@@ -163,16 +162,10 @@ def dispatch():
         log.info("Changing to directory %s", chdir)
         cwd = os.getcwd()
         os.chdir(chdir)
-    try:
-        code = function(**args)
-    except CommandFailed as e:
-        if args.get('log') or args.get('verbose'):
-            log.exception(e)
-        sys.stderr.write("Command failed: %s, code %d\n" % (e.cmd, e.code))
-        sys.stderr.write("output:\n")
-        sys.stderr.write("%s\n" % (e.out))
-        code = 1
-    finally:
-        if cwd:
-            os.chdir(cwd)
+
+    code = function(**args)
+
+    if cwd:
+        os.chdir(cwd)
+
     return code
