@@ -8,7 +8,6 @@ else:
     raise ImportError("Unsupported operating system.")
 
 CommandMissing = _mod.CommandMissing
-CommandFailed = _mod.CommandFailed
 afs_mountpoint = _mod.afs_mountpoint
 afs_umount = _mod.afs_umount
 cat = _mod.cat

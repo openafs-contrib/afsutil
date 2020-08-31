@@ -28,7 +28,6 @@ import sh
 
 from afsutil.system import common as _mod
 CommandMissing = _mod.CommandMissing
-CommandFailed = _mod.CommandFailed
 cat = _mod.cat
 directory_should_exist = _mod.directory_should_exist
 directory_should_not_exist = _mod.directory_should_not_exist
