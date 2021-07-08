@@ -735,6 +735,7 @@ class MockRpmBuilder(RpmBuilder):
         cmd.append('--show-duplicates')
         cmd.append('--queryformat="%{VERSION}-%{RELEASE}"')
         cmd.append('kernel-devel')
+        cmd.append('2>/dev/null')
         logger.debug('Searching for kernel-devel in enabled repos.')
         output = self.mock('--enable-network', '--quiet', '--chroot', ' '.join(cmd), quiet=True)
         versions = []
