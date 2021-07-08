@@ -735,7 +735,7 @@ class MockRpmBuilder(RpmBuilder):
         cmd.append('--queryformat="%{VERSION}-%{RELEASE}"')
         cmd.append('kernel-devel')
         logger.debug('Searching for kernel-devel in enabled repos.')
-        output = self.mock('--quiet', '--chroot', ' '.join(cmd), quiet=True)
+        output = self.mock('--enable-network', '--quiet', '--chroot', ' '.join(cmd), quiet=True)
         versions = []
         for line in output:
             if line.startswith('rpmdb:'):
