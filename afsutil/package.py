@@ -731,6 +731,7 @@ class MockRpmBuilder(RpmBuilder):
         self.init_chroot()
         self.mock('--install', 'yum-utils', '--quiet', output=False) # for repoquery
         cmd = ['repoquery']
+        cmd.append('--quiet')
         cmd.append('--show-duplicates')
         cmd.append('--queryformat="%{VERSION}-%{RELEASE}"')
         cmd.append('kernel-devel')
